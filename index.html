@@ -1102,38 +1102,39 @@
                 [[sensorRoofX, sensorRoofY], [sensorLowX, sensorLowY]].forEach(([sx, sy]) => {
                     ctx.save();
                     ctx.fillStyle = '#0f172a';
-                    fillRoundedRect(ctx, sx - 16, sy - 16, 32, 32, 8);
+                    fillRoundedRect(ctx, sx - 16, sy - 12, 32, 24, 6);
                     ctx.fill();
                     ctx.strokeStyle = '#10b981';
                     ctx.lineWidth = 2;
                     ctx.stroke();
+
                     ctx.fillStyle = '#34d399';
                     ctx.beginPath();
-                    ctx.arc(sx, sy, 6, 0, Math.PI * 2);
+                    ctx.arc(sx, sy, 4, 0, Math.PI * 2);
                     ctx.fill();
                     ctx.restore();
                 });
 
-                // 4. Visual Forced-Convection Airflow Streamlines (No text)
+                // 4. Visual Smart Fan Airflow Streamlines (No text)
                 drawCurvedAirflowArrow(
                     ctx,
-                    circX + 18, circY - 14,
-                    (circX + fanX) * 0.48, (circY + fanY) * 0.55,
-                    fanX - 18, fanY + 42,
+                    circX + 18, circY - 12,
+                    (circX + fanX) * 0.48, (circY + fanY) * 0.56,
+                    fanX - 18, fanY + 34,
                     '#38bdf8', 'rgba(56, 189, 248, 0.75)', 6, true
                 );
                 drawCurvedAirflowArrow(
                     ctx,
-                    fanX, fanY - 12,
-                    fanX + 6, fanY - 52,
-                    fanX + 14, Math.max(18, fanY - 88),
+                    fanX, fanY - 10,
+                    fanX + 6, fanY - 48,
+                    fanX + 12, Math.max(18, fanY - 82),
                     '#f43f5e', 'rgba(244, 63, 94, 0.85)', 6, false
                 );
             }
         }
 
-        // Photo-Faithful Architectural Renderer: Works 100% on Vercel (even without API key!)
-        // Transforms the student's actual photo into a realistic architectural render with concrete walls, warm ceiling cove lighting, wooden floor, furniture, and 3D cooling components
+        // Photo-Faithful Architectural Renderer: Works 100% on Vercel & Canvas
+        // Transforms the student's actual photo bounding box & openings into a full Photorealistic 3D Architectural Cutaway Render
         function drawCustomPhotoBasedArchitectureCanvas(canvas) {
             const ctx = canvas.getContext('2d');
             const w = canvas.width;
@@ -1152,121 +1153,151 @@
             const feat = appState.detectedPhotoFeatures || extractShoeboxStructureFromPhoto(img);
             const { boxX, boxY, boxW, boxH, highX, highY, lowX, lowY, detectedOpenings = [] } = feat;
 
-            // Step 1: Pixel-level Material & Lighting Transformation of the Student's Exact Photo!
-            const offCanvas = document.createElement('canvas');
-            offCanvas.width = w;
-            offCanvas.height = h;
-            const offCtx = offCanvas.getContext('2d');
-            offCtx.drawImage(img, dx, dy, dw, dh);
-
-            let hasPixelAccess = false;
-            try {
-                const imgData = offCtx.getImageData(0, 0, w, h);
-                const d = imgData.data;
-                hasPixelAccess = true;
-
-                for (let y = 0; y < h; y++) {
-                    for (let x = 0; x < w; x++) {
-                        const idx = (y * w + x) * 4;
-                        const r = d[idx], g = d[idx + 1], b = d[idx + 2];
-                        const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-
-                        const inBox = (x >= boxX - 30 && x <= boxX + boxW + 30 && y >= boxY - 30 && y <= boxY + boxH + 30);
-                        const isCardboardTone = (r > g + 4 && g >= b - 12 && r > 62 && lum > 48 && lum < 240);
-                        const isDarkCutoutOrShadow = (inBox && lum <= 82);
-
-                        if (inBox && isCardboardTone) {
-                            // Convert brown/tan cardboard into sleek bright architectural white plaster & cool insulated concrete while keeping 100% of real 3D folds & shadows
-                            const archLum = Math.min(253, lum * 1.24 + 34);
-                            d[idx]     = Math.round(r * 0.14 + archLum * 0.86);
-                            d[idx + 1] = Math.round(g * 0.14 + (archLum + 2) * 0.86);
-                            d[idx + 2] = Math.round(b * 0.12 + Math.min(255, archLum + 9) * 0.88);
-                        } else if (isDarkCutoutOrShadow) {
-                            // Turn dark cutout openings into reflective blue-tinted double-glazed architectural glass
-                            d[idx]     = Math.min(255, Math.round(r * 0.55 + 24));
-                            d[idx + 1] = Math.min(255, Math.round(g * 0.68 + 68));
-                            d[idx + 2] = Math.min(255, Math.round(b * 0.82 + 112));
-                        } else if (!inBox) {
-                            // Clean architectural daylight environment around the model
-                            d[idx]     = Math.min(255, Math.round(r * 0.72 + 48));
-                            d[idx + 1] = Math.min(255, Math.round(g * 0.78 + 62));
-                            d[idx + 2] = Math.min(255, Math.round(b * 0.84 + 78));
-                        }
-                    }
-                }
-                ctx.putImageData(imgData, 0, 0);
-            } catch (err) {
-                // Fallback if browser security blocks getImageData
-                ctx.drawImage(img, dx, dy, dw, dh);
-            }
-
-            // Step 2: Crisp Architectural Line & Depth Pass from the original photo
+            // 1. Draw architectural daylight environment blended with the student's real photo background perspective
             ctx.save();
-            ctx.globalCompositeOperation = 'multiply';
-            ctx.globalAlpha = 0.24;
-            ctx.filter = 'contrast(1.5) grayscale(1)';
             ctx.drawImage(img, dx, dy, dw, dh);
+            const skyOverlay = ctx.createLinearGradient(0, 0, 0, h);
+            skyOverlay.addColorStop(0, 'rgba(3, 105, 161, 0.55)');
+            skyOverlay.addColorStop(0.5, 'rgba(224, 242, 254, 0.38)');
+            skyOverlay.addColorStop(1, 'rgba(15, 23, 42, 0.65)');
+            ctx.fillStyle = skyOverlay;
+            ctx.fillRect(0, 0, w, h);
             ctx.restore();
 
-            // Step 3: Realistic Architectural Roof Slab, Warm Interior LED Cove Lighting, Wooden Flooring & Subtle Living Room Elements inside the detected shoebox
-            const inX = boxX + 14;
-            const inY = boxY + 14;
-            const inW = boxW - 28;
-            const inH = boxH - 28;
-
+            // 2. Construct the 3D Photorealistic Architectural Building Volume aligned 1:1 to the student's shoebox coordinates (boxX, boxY, boxW, boxH)
             ctx.save();
-            // 3A. Insulated White Roof Overhang Cap on top of the student's shoebox
-            const roofGrad = ctx.createLinearGradient(boxX - 12, boxY - 14, boxX - 12, boxY + 8);
-            roofGrad.addColorStop(0, 'rgba(255, 255, 255, 0.94)');
-            roofGrad.addColorStop(1, 'rgba(203, 213, 225, 0.88)');
-            ctx.fillStyle = roofGrad;
-            fillRoundedRect(ctx, boxX - 10, boxY - 12, boxW + 20, 18, 5);
+            ctx.shadowColor = 'rgba(15, 23, 42, 0.55)';
+            ctx.shadowBlur = 28;
+            ctx.fillStyle = '#f8fafc';
+            fillRoundedRect(ctx, boxX, boxY, boxW, boxH, 8);
             ctx.fill();
-            ctx.strokeStyle = 'rgba(100, 116, 139, 0.7)';
+            ctx.restore();
+
+            // Concrete foundation slab
+            ctx.fillStyle = '#94a3b8';
+            fillRoundedRect(ctx, boxX - 18, boxY + boxH - 6, boxW + 36, 22, 6);
+            ctx.fill();
+
+            // Double-layer heat-reflective white architectural roof slab
+            const roofGrad = ctx.createLinearGradient(boxX - 16, boxY - 18, boxX - 16, boxY + 6);
+            roofGrad.addColorStop(0, '#ffffff');
+            roofGrad.addColorStop(1, '#cbd5e1');
+            ctx.fillStyle = roofGrad;
+            fillRoundedRect(ctx, boxX - 16, boxY - 16, boxW + 32, 22, 6);
+            ctx.fill();
+            ctx.strokeStyle = '#64748b';
             ctx.lineWidth = 2;
             ctx.stroke();
 
-            // 3B. Warm Architectural Interior LED Cove Glow
-            const ledGrad = ctx.createLinearGradient(inX, inY, inX, inY + inH * 0.65);
-            ledGrad.addColorStop(0, 'rgba(254, 240, 138, 0.42)');
-            ledGrad.addColorStop(0.45, 'rgba(224, 242, 254, 0.18)');
-            ledGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-            ctx.fillStyle = ledGrad;
-            ctx.fillRect(inX, inY, inW, inH * 0.65);
+            // 3. 3D Interior Apartment Cutaway aligned inside the shoebox
+            const wallThick = Math.max(16, Math.round(boxW * 0.035));
+            const inX = boxX + wallThick;
+            const inY = boxY + wallThick;
+            const inW = boxW - wallThick * 2;
+            const inH = boxH - wallThick * 1.8;
 
-            // 3C. Realistic Hardwood Flooring Strip at the bottom of the shoebox interior
-            const floorH = Math.max(14, Math.min(26, inH * 0.08));
-            const floorY = inY + inH - floorH;
-            const woodGrad = ctx.createLinearGradient(inX, floorY, inX + inW, floorY);
-            woodGrad.addColorStop(0, 'rgba(146, 64, 14, 0.78)');
-            woodGrad.addColorStop(0.5, 'rgba(180, 83, 9, 0.82)');
-            woodGrad.addColorStop(1, 'rgba(120, 53, 15, 0.78)');
-            ctx.fillStyle = woodGrad;
-            fillRoundedRect(ctx, inX + 4, floorY, inW - 8, floorH, 4);
+            // Interior room walls with warm daylight & cool air gradient
+            const roomGrad = ctx.createLinearGradient(inX, inY, inX, inY + inH);
+            roomGrad.addColorStop(0, '#e0f2fe');
+            roomGrad.addColorStop(0.5, '#f8fafc');
+            roomGrad.addColorStop(1, '#fef3c7');
+            ctx.fillStyle = roomGrad;
+            ctx.fillRect(inX, inY, inW, inH);
+
+            // Blend the student's original photo structure/openings subtly into the room so cutouts & perspective match
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(inX, inY, inW, inH);
+            ctx.clip();
+            ctx.globalAlpha = 0.22;
+            ctx.filter = 'contrast(1.35) brightness(1.08)';
+            ctx.drawImage(img, dx, dy, dw, dh);
+            ctx.restore();
+
+            // 3D Perspective interior ceiling, side walls & warm LED cove lighting
+            const depthX = Math.round(inW * 0.07);
+            const depthY = Math.round(inH * 0.09);
+
+            // Ceiling perspective plane
+            ctx.fillStyle = 'rgba(241, 245, 249, 0.9)';
+            ctx.beginPath();
+            ctx.moveTo(inX, inY);
+            ctx.lineTo(inX + inW, inY);
+            ctx.lineTo(inX + inW - depthX, inY + depthY);
+            ctx.lineTo(inX + depthX, inY + depthY);
+            ctx.closePath();
             ctx.fill();
 
-            // 3D. Transform any detected cutout holes on the student's photo into realistic architectural aluminum-framed glass windows
+            // Warm recessed LED ceiling strip
+            const ledGrad = ctx.createLinearGradient(inX, inY + depthY, inX, inY + depthY + 45);
+            ledGrad.addColorStop(0, 'rgba(253, 224, 71, 0.55)');
+            ledGrad.addColorStop(1, 'rgba(253, 224, 71, 0)');
+            ctx.fillStyle = ledGrad;
+            ctx.fillRect(inX + depthX, inY + depthY, inW - depthX * 2, 45);
+
+            // Hardwood flooring plane at the bottom of the room
+            const floorH = Math.max(18, Math.round(inH * 0.11));
+            const floorY = inY + inH - floorH;
+            const woodGrad = ctx.createLinearGradient(inX, floorY, inX + inW, floorY + floorH);
+            woodGrad.addColorStop(0, '#b45309');
+            woodGrad.addColorStop(0.5, '#d97706');
+            woodGrad.addColorStop(1, '#92400e');
+            ctx.fillStyle = woodGrad;
+            ctx.fillRect(inX, floorY, inW, floorH);
+
+            // Realistic interior furniture (Sofa, Coffee table, Greenery & Uncle Chan) scaled to the student's shoebox size
+            const sofaW = Math.round(inW * 0.18);
+            const sofaH = Math.round(inH * 0.22);
+            const sofaX = inX + Math.round(inW * 0.24);
+            const sofaY = floorY - sofaH + 4;
+            ctx.fillStyle = '#d97706';
+            fillRoundedRect(ctx, sofaX, sofaY, sofaW, sofaH, 8);
+            ctx.fill();
+            ctx.fillStyle = '#fef3c7';
+            fillRoundedRect(ctx, sofaX + 6, sofaY + 6, sofaW - 12, Math.round(sofaH * 0.5), 5);
+            ctx.fill();
+
+            // Tea table
+            const tableX = inX + Math.round(inW * 0.62);
+            const tableY = floorY - Math.round(inH * 0.14);
+            ctx.fillStyle = '#78350f';
+            ctx.fillRect(tableX, tableY, Math.round(inW * 0.12), 7);
+            ctx.fillRect(tableX + 6, tableY + 7, 5, Math.round(inH * 0.14) - 5);
+            ctx.fillRect(tableX + Math.round(inW * 0.12) - 11, tableY + 7, 5, Math.round(inH * 0.14) - 5);
+
+            // Uncle Chan relaxing inside the cooled apartment
+            const chanX = inX + Math.round(inW * 0.50);
+            const chanFootY = floorY + 2;
+            const chanBodyH = Math.round(inH * 0.28);
+            ctx.fillStyle = '#fde68a';
+            ctx.beginPath();
+            ctx.arc(chanX, chanFootY - chanBodyH - 14, 15, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#10b981';
+            fillRoundedRect(ctx, chanX - 15, chanFootY - chanBodyH, 30, chanBodyH, 8);
+            ctx.fill();
+
+            // 4. Render any additional cutout windows detected on the student's shoebox photo as double-glazed aluminum windows
             detectedOpenings.forEach(op => {
                 const distHigh = Math.hypot(op.x - highX, op.y - highY);
                 const distLow = Math.hypot(op.x - lowX, op.y - lowY);
                 if (distHigh > 68 && distLow > 68) {
                     ctx.save();
-                    const glassGrad = ctx.createLinearGradient(op.x - 28, op.y - 22, op.x + 28, op.y + 22);
-                    glassGrad.addColorStop(0, 'rgba(56, 189, 248, 0.52)');
-                    glassGrad.addColorStop(0.5, 'rgba(224, 242, 254, 0.68)');
-                    glassGrad.addColorStop(1, 'rgba(2, 132, 199, 0.52)');
+                    const glassGrad = ctx.createLinearGradient(op.x - 32, op.y - 24, op.x + 32, op.y + 24);
+                    glassGrad.addColorStop(0, 'rgba(56, 189, 248, 0.78)');
+                    glassGrad.addColorStop(0.5, 'rgba(224, 242, 254, 0.90)');
+                    glassGrad.addColorStop(1, 'rgba(2, 132, 199, 0.78)');
                     ctx.fillStyle = glassGrad;
-                    ctx.strokeStyle = 'rgba(30, 41, 59, 0.9)';
+                    ctx.strokeStyle = '#1e293b';
                     ctx.lineWidth = 3;
-                    fillRoundedRect(ctx, op.x - 28, op.y - 22, 56, 44, 5);
+                    fillRoundedRect(ctx, op.x - 32, op.y - 24, 64, 48, 6);
                     ctx.fill();
                     ctx.stroke();
                     ctx.restore();
                 }
             });
-            ctx.restore();
 
-            // Step 4: Render 3D Skylight/Louvers (Plan A) or Smart Fans (Plan B) directly onto the photo's detected high/low positions (NO text labels)
+            // 5. Render 3D Skylight/Louvers (Plan A) or Smart Fans (Plan B) directly onto the photo's detected high/low positions (NO text labels)
             renderArchitecturalCoolingOverlay(ctx, w, h, boxX, boxY, boxW, boxH, highX, highY, lowX, lowY, true);
         }
 
@@ -1862,13 +1893,6 @@
 
                 // Relaxed Gemini Vision check: Accept ANY shoebox, cardboard box, paper box, or craft box model (whether it has dolls/furniture/cutouts or is an empty shoebox!)
                 const activeKey = getActiveApiKey();
-                if (!activeKey) {
-                    return {
-                        valid: true,
-                        title: '成功辨識鞋盒模型！',
-                        desc: '系統已鎖定你的鞋盒照片結構，並生成真實建築降溫效果圖！'
-                    };
-                }
 
                 const verifyPrompt = `你是一位友善的香港小學 STEAM 課堂 AI 助手。請檢查學生上載或拍攝的相片中是否包含「鞋盒、紙盒、瓦通紙箱、卡紙盒或手作模型」。
 
@@ -2097,11 +2121,11 @@
                 const afterCanvas = document.getElementById('afterRenderCanvas');
                 const activeKey = getActiveApiKey();
 
-                // Step 1: Always draw the local photo-faithful 3D architectural rendering FIRST so the canvas is NEVER blank on Vercel!
+                // Step 1: Always draw the local photo-faithful 3D architectural rendering FIRST so the canvas is NEVER blank!
                 drawPhotorealisticArchitectureCanvas(afterCanvas);
 
-                // Step 2: If an API key is available (in Canvas preview or entered by teacher on Vercel), refine coordinates and try cloud image generation
-                if (activeKey && appState.isCustomUpload && appState.customUploadedImageObj) {
+                // Step 2: Refine coordinates with Gemini Vision if custom photo is uploaded
+                if (appState.isCustomUpload && appState.customUploadedImageObj) {
                     const coordPrompt = `Analyze this student's shoebox model photo (canvas resolution 960x600).
 Locate the shoebox bounding box and the best coordinates on the box for:
 1) highX, highY: the top/roof opening or high wall area (x between 150-810, y between 90-300).
@@ -2147,16 +2171,15 @@ Return ONLY valid JSON: {"boxX": number, "boxY": number, "boxW": number, "boxH":
                 statusTitle.textContent = `步驟 2/2：正在根據【${planLabel}】生成真實建築效果圖...`;
 
                 let cloudImageApplied = false;
-                if (activeKey) {
-                    const imgPrompt = appState.selectedPlan === 1
-                        ? `Photorealistic architectural image-to-image transformation of this handmade shoebox model photo.
+                const imgPrompt = appState.selectedPlan === 1
+                    ? `Photorealistic architectural image-to-image transformation of this handmade shoebox model photo.
 CRITICAL RULES:
 1. Strictly preserve the exact camera angle, 3D box geometry, perspective, wall cutouts, and interior layout of the uploaded shoebox photo.
 2. Transform the cardboard shoebox into a realistic, bright refurbished Hong Kong top-floor apartment interior/cutaway with white insulated walls, warm wooden floor, and cozy living room furniture.
 3. At the high roof/upper wall opening of the shoebox, integrate a realistic 3D open skylight window (high-level exhaust window) with subtle warm upward airflow visualization.
 4. At the lower wall opening of the shoebox, integrate a realistic 3D shaded louver window with cool fresh air flowing inward.
 5. DO NOT include any text, words, letters, numbers, or labels anywhere in the image. Pure architectural visual rendering only.`
-                        : `Photorealistic architectural image-to-image transformation of this handmade shoebox model photo.
+                    : `Photorealistic architectural image-to-image transformation of this handmade shoebox model photo.
 CRITICAL RULES:
 1. Strictly preserve the exact camera angle, 3D box geometry, perspective, wall cutouts, and interior layout of the uploaded shoebox photo.
 2. Transform the cardboard shoebox into a realistic, bright refurbished Hong Kong top-floor apartment interior/cutaway with white insulated walls, warm wooden floor, and cozy living room furniture.
@@ -2164,42 +2187,41 @@ CRITICAL RULES:
 4. At the lower corner of the shoebox interior, integrate a modern upward-tilted air circulator fan pushing cool airflow diagonally upward.
 5. DO NOT include any text, words, letters, numbers, or labels anywhere in the image. Pure architectural visual rendering only.`;
 
-                    const imgResult = await fetchWithBackoff(
-                        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent?key=${activeKey}`,
-                        {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                contents: [{
-                                    role: "user",
-                                    parts: [
-                                        { text: imgPrompt },
-                                        { inlineData: { mimeType: "image/png", data: base64Image } }
-                                    ]
-                                }],
-                                generationConfig: {
-                                    responseModalities: ['TEXT', 'IMAGE']
-                                }
-                            })
-                        },
-                        1
-                    ).catch(() => null);
+                const imgResult = await fetchWithBackoff(
+                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent?key=${activeKey}`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents: [{
+                                role: "user",
+                                parts: [
+                                    { text: imgPrompt },
+                                    { inlineData: { mimeType: "image/png", data: base64Image } }
+                                ]
+                            }],
+                            generationConfig: {
+                                responseModalities: ['TEXT', 'IMAGE']
+                            }
+                        })
+                    },
+                    1
+                ).catch(() => null);
 
-                    const imgPart = imgResult?.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-                    if (imgPart && imgPart.inlineData?.data) {
-                        await new Promise((resolve) => {
-                            const genImg = new Image();
-                            genImg.onload = () => {
-                                const ctx = afterCanvas.getContext('2d');
-                                ctx.clearRect(0, 0, afterCanvas.width, afterCanvas.height);
-                                ctx.drawImage(genImg, 0, 0, afterCanvas.width, afterCanvas.height);
-                                cloudImageApplied = true;
-                                resolve();
-                            };
-                            genImg.onerror = () => resolve();
-                            genImg.src = `data:${imgPart.inlineData.mimeType || 'image/png'};base64,${imgPart.inlineData.data}`;
-                        });
-                    }
+                const imgPart = imgResult?.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+                if (imgPart && imgPart.inlineData?.data) {
+                    await new Promise((resolve) => {
+                        const genImg = new Image();
+                        genImg.onload = () => {
+                            const ctx = afterCanvas.getContext('2d');
+                            ctx.clearRect(0, 0, afterCanvas.width, afterCanvas.height);
+                            ctx.drawImage(genImg, 0, 0, afterCanvas.width, afterCanvas.height);
+                            cloudImageApplied = true;
+                            resolve();
+                        };
+                        genImg.onerror = () => resolve();
+                        genImg.src = `data:${imgPart.inlineData.mimeType || 'image/png'};base64,${imgPart.inlineData.data}`;
+                    });
                 }
 
                 progressBar.style.width = '95%';
