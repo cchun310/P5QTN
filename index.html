@@ -139,7 +139,7 @@
                 <div>
                     <div class="flex items-center gap-2">
                         <h1 class="text-lg sm:text-xl font-black tracking-tight">為陳伯降溫：舊樓頂層單位 AI 鞋盒改造系統</h1>
-                        <span class="bg-amber-500/20 text-amber-300 border border-amber-400/30 text-xs font-semibold px-2.5 py-0.5 rounded-full">STEAM 社區關懷專案</span>
+                        <span class="bg-amber-500/20 text-amber-300 border border-amber-400/30 text-xs font-semibold px-2.5 py-0.5 rounded-full">P5QTN</span>
                     </div>
                     <p class="text-xs text-slate-400">用 iPad 拍下為陳伯設計的鞋盒模型，AI 一鍵生成「真實被動式降溫建築效果圖」</p>
                 </div>
@@ -677,12 +677,6 @@
                     </label>
                     <button onclick="closeInvalidImageModal(); loadSampleShoebox('uncle_chan_flat');" class="touch-card bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-3 px-4 rounded-xl text-xs sm:text-sm">
                         用預設鞋盒範本
-                    </button>
-                </div>
-
-                <div class="text-center pt-1">
-                    <button onclick="forceAcceptUploadedImage()" class="text-[11px] text-slate-400 hover:text-slate-600 underline">
-                        這確實是我的特殊造型鞋盒作品，繼續使用此相片
                     </button>
                 </div>
             </div>
@@ -1621,77 +1615,146 @@
             syncSideBySideImages();
         }
 
-        function forceAcceptUploadedImage() {
-            closeInvalidImageModal();
-            if (appState.pendingRejectedImage) {
-                applyValidatedImageToCanvas(appState.pendingRejectedImage, appState.pendingRejectedFileName || '學生自訂模型');
-                showPhotoValidationBanner(true, '已手動確認使用此鞋盒相片', '同學已確認此相片為鞋盒改造作品，現在可點擊下方按鈕生成效果圖。');
-                showToast('已載入相片！請點擊「一鍵生成效果圖」', 'fa-check');
-            }
-        }
-
-        // Local visual heuristic fallback + Gemini Vision check to verify if uploaded photo is a shoebox/craft model
+        // Strict Computer-Vision Heuristics + Gemini Vision check to verify if uploaded photo is truly a physical shoebox/cardboard craft model
         function analyzeImageHeuristics(img, fileName = '') {
             const lowerName = fileName.toLowerCase();
-            const irrelevantKeywords = ['selfie', 'avatar', 'meme', 'cat', 'dog', 'food', 'game', 'screenshot', 'wallpaper', 'car', 'flower', 'person', 'face'];
+            const irrelevantKeywords = [
+                'selfie', 'avatar', 'meme', 'cat', 'dog', 'food', 'game', 'screenshot',
+                'wallpaper', 'car', 'flower', 'person', 'face', 'icon', 'logo', 'cartoon',
+                'anime', 'clipart', 'vector', 'poster', 'banner', 'chart', 'diagram'
+            ];
             for (const kw of irrelevantKeywords) {
                 if (lowerName.includes(kw)) {
                     return {
                         likelyShoebox: false,
-                        reason: `檔案名稱或特徵顯示這可能是與課堂無關的圖片 (${kw})，而非鞋盒模型。`
+                        reason: `檔案名稱或特徵顯示這是一張非鞋盒圖片 (${kw})，請拍攝實體鞋盒改造模型。`
                     };
                 }
             }
 
-            // Sample pixels on a small offscreen canvas to check if image is blank, pure screenshot, or lacks craft/box edge structure
+            // Analyze 96x96 pixel grid for physical box geometry, cardboard/paper color distribution, and digital flat-fill detection
+            const W = 96, H = 96;
             const off = document.createElement('canvas');
-            off.width = 64;
-            off.height = 64;
+            off.width = W;
+            off.height = H;
             const octx = off.getContext('2d');
-            octx.drawImage(img, 0, 0, 64, 64);
-            const data = octx.getImageData(0, 0, 64, 64).data;
+            octx.drawImage(img, 0, 0, W, H);
+            const data = octx.getImageData(0, 0, W, H).data;
 
-            let colorVariance = 0;
-            let edgeCount = 0;
-            let warmOrNeutralCraftPixels = 0;
-            const totalPixels = 64 * 64;
+            let totalPixels = W * H;
+            let exactIdenticalNeighbors = 0; // High in digital graphics, cartoons, screenshots, clipart
+            let cardboardBrownTanPixels = 0; // Brown/kraft/beige/white-box craft tones
+            let vividNeonOrSkyPixels = 0;    // Pure saturated sky/grass/cartoon colors
+            let skinLikePixels = 0;          // Portraits / selfies
+            let strongHorizEdges = 0;        // Box horizontal edges
+            let strongVertEdges = 0;         // Box vertical edges
+            let diagonalOrganicEdges = 0;    // Trees, faces, animals, random objects
+            let centerBoxPresence = 0;       // Box presence in central region
 
-            for (let y = 1; y < 63; y++) {
-                for (let x = 1; x < 63; x++) {
-                    const idx = (y * 64 + x) * 4;
+            for (let y = 1; y < H - 1; y++) {
+                for (let x = 1; x < W - 1; x++) {
+                    const idx = (y * W + x) * 4;
                     const r = data[idx], g = data[idx + 1], b = data[idx + 2];
+                    const a = data[idx + 3];
 
-                    // Check cardboard / paper / craft / indoor desk tones vs pure neon/sky/solid fills
-                    if ((r > 90 && g > 70 && b > 45) || (Math.abs(r - g) < 35 && Math.abs(g - b) < 35)) {
-                        warmOrNeutralCraftPixels++;
+                    // Transparent PNG clipart/sticker -> definitely not a camera photo of a shoebox
+                    if (a < 240) {
+                        return {
+                            likelyShoebox: false,
+                            reason: '系統偵測到這是一張去背圖案或貼圖 (PNG 透明背景)，請上載真實拍攝的鞋盒模型相片！'
+                        };
                     }
 
-                    // Simple Sobel-like horizontal + vertical gradient for structural edges
-                    const idxRight = (y * 64 + (x + 1)) * 4;
-                    const idxDown = ((y + 1) * 64 + x) * 4;
-                    const diffH = Math.abs(r - data[idxRight]) + Math.abs(g - data[idxRight + 1]) + Math.abs(b - data[idxRight + 2]);
-                    const diffV = Math.abs(r - data[idxDown]) + Math.abs(g - data[idxDown + 1]) + Math.abs(b - data[idxDown + 2]);
-                    if (diffH + diffV > 85) edgeCount++;
-                    colorVariance += (diffH + diffV);
+                    const idxRight = (y * W + (x + 1)) * 4;
+                    const idxDown = ((y + 1) * W + x) * 4;
+                    const drH = Math.abs(r - data[idxRight]);
+                    const dgH = Math.abs(g - data[idxRight + 1]);
+                    const dbH = Math.abs(b - data[idxRight + 2]);
+                    const drV = Math.abs(r - data[idxDown]);
+                    const dgV = Math.abs(g - data[idxDown + 1]);
+                    const dbV = Math.abs(b - data[idxDown + 2]);
+
+                    const diffH = drH + dgH + dbH;
+                    const diffV = drV + dgV + dbV;
+
+                    // 1. Check for flat digital solid color fills (screenshots, cartoons, logos, diagrams)
+                    if (diffH <= 2 && diffV <= 2) {
+                        exactIdenticalNeighbors++;
+                    }
+
+                    // 2. Color family classification
+                    const maxC = Math.max(r, g, b);
+                    const minC = Math.min(r, g, b);
+                    const sat = maxC === 0 ? 0 : (maxC - minC) / maxC;
+                    const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+
+                    // Cardboard / Kraft paper / Carton box / Craft wood / White box in indoor lighting
+                    const isCardboardWarm = (r > g && g >= b && (r - b) >= 18 && (r - b) <= 135 && r >= 75 && r <= 238 && sat >= 0.10 && sat <= 0.68);
+                    const isBoxNeutralSurface = (lum >= 85 && lum <= 235 && sat < 0.20 && diffH < 45 && diffV < 45);
+                    if (isCardboardWarm) {
+                        cardboardBrownTanPixels++;
+                        if (x > W * 0.2 && x < W * 0.8 && y > H * 0.2 && y < H * 0.8) {
+                            centerBoxPresence++;
+                        }
+                    } else if (isBoxNeutralSurface && x > W * 0.22 && x < W * 0.78 && y > H * 0.22 && y < H * 0.78) {
+                        centerBoxPresence += 0.35;
+                    }
+
+                    // Vivid saturated non-cardboard colors (cartoons, landscapes, food, colourful posters)
+                    if (sat > 0.62 && !isCardboardWarm) {
+                        vividNeonOrSkyPixels++;
+                    }
+
+                    // Skin tone heuristic (faces / selfies / hands filling the camera)
+                    if (r > 95 && g > 40 && b > 20 && (r - g) > 15 && r > b && sat > 0.18 && sat < 0.58 && !isCardboardWarm) {
+                        skinLikePixels++;
+                    }
+
+                    // 3. Structural Box Edge Orientation (Shoeboxes have distinct horizontal & vertical edges)
+                    if (diffV > 75 && diffH < 38) {
+                        strongHorizEdges++;
+                    } else if (diffH > 75 && diffV < 38) {
+                        strongVertEdges++;
+                    } else if (diffH > 65 && diffV > 65) {
+                        diagonalOrganicEdges++;
+                    }
                 }
             }
 
-            const edgeRatio = edgeCount / totalPixels;
-            const craftRatio = warmOrNeutralCraftPixels / totalPixels;
+            const flatDigitalRatio = exactIdenticalNeighbors / totalPixels;
+            const cardboardRatio = cardboardBrownTanPixels / totalPixels;
+            const vividRatio = vividNeonOrSkyPixels / totalPixels;
+            const orthogonalEdges = strongHorizEdges + strongVertEdges;
 
-            // Reject nearly solid/blank images or images with almost zero structural edges
-            if (edgeRatio < 0.035 || colorVariance < 35000) {
+            // Rule 1: Reject flat digital illustrations, cartoons, icons, text screenshots, or blank images
+            if (flatDigitalRatio > 0.36) {
                 return {
                     likelyShoebox: false,
-                    reason: '相片畫面過於單一或模糊，系統未能偵測到鞋盒的立體紙盒邊緣與開口結構。'
+                    reason: '系統偵測到這是平面圖案、卡通插畫或螢幕截圖，並非真實拍攝的立體鞋盒模型相片！'
                 };
             }
 
-            // Reject images dominated by pure blue/green outdoor landscape or extreme neon graphics
-            if (craftRatio < 0.22) {
+            // Rule 2: Reject images with overly vivid/saturated colors (e.g. cartoons, flowers, food, outdoor scenery)
+            if (vividRatio > 0.28) {
                 return {
                     likelyShoebox: false,
-                    reason: '相片色彩與結構看起來像風景、卡通或非紙盒物品，未能辨識出鞋盒或手工紙模型。'
+                    reason: '相片色彩屬於鮮豔圖案、風景或日常物品，未能辨識出瓦通紙盒或鞋盒模型材質。'
+                };
+            }
+
+            // Rule 3: Require real cardboard/craft color presence in the central region of the photo
+            if (cardboardRatio < 0.08 || centerBoxPresence < totalPixels * 0.07) {
+                return {
+                    likelyShoebox: false,
+                    reason: '畫面中央未能偵測到鞋盒或紙盒模型的結構與材質，請將「陳伯頂樓單位鞋盒模型」放於畫面中央拍攝。'
+                };
+            }
+
+            // Rule 4: Require orthogonal box edges (horizontal + vertical lines of a 3D rectangular shoebox)
+            if (orthogonalEdges < 28 || (diagonalOrganicEdges > orthogonalEdges * 2.2)) {
+                return {
+                    likelyShoebox: false,
+                    reason: '系統未能偵測到鞋盒的立體長方盒邊緣與窗口結構，請確保相片清楚拍到整個鞋盒模型。'
                 };
             }
 
@@ -1704,15 +1767,29 @@
             checkOverlay.classList.add('flex');
 
             try {
-                // Step 1: Call Gemini Multimodal API to check if the image is a shoebox / cardboard model / architectural craft
-                const verifyPrompt = `You are an AI classroom assistant checking a primary/secondary school student's photo upload.
-Determine if this image shows a handmade shoebox model, cardboard box craft, paper/craft architectural diorama, or classroom model box (鞋盒模型/紙盒手作模型).
-If the photo is an irrelevant image (such as a person/selfie, pet/animal, food, outdoor scenery, cartoon/meme, random screenshot, stationary only, or empty floor/desk without a box model), mark isShoeboxModel as false and explain politely in Traditional Chinese (Hong Kong style) what was detected and remind the student to upload their shoebox model for Uncle Chan's apartment.
-Respond ONLY in valid JSON:
-{"isShoeboxModel": boolean, "detectedObject": "short description in Traditional Chinese", "feedbackMessage": "polite reminder in Traditional Chinese"}`;
+                // Step 1: Run fast local computer-vision pre-check first to immediately catch obvious cartoons/clipart/screenshots
+                const heuristicPreCheck = analyzeImageHeuristics(img, fileName);
+
+                // Step 2: Call Gemini 3 Flash Vision API with strict shoebox verification criteria
+                const verifyPrompt = `你是一位嚴格的香港小學 STEAM 課堂 AI 助教，負責檢查學生上載的相片是否真的是「陳伯頂樓單位的實體鞋盒 / 紙盒建築改造模型」。
+請仔細觀察圖片，並嚴格遵守以下判斷標準：
+1. 只有當相片是【真實拍攝的立體鞋盒、瓦通紙盒、卡紙盒手作房間/建築模型】（例如有剪開窗口、貼上雪糕棍百葉窗、錫紙、吸管或小風扇等手作材料）時，isShoeboxModel 才可以設為 true。
+2. 如果圖片是以下任何一種，isShoeboxModel 必須設為 false：
+   - 卡通圖案、插畫、Icon、平面設計圖、網頁截圖、文字圖片
+   - 人像自拍、手部特寫、寵物、動物、植物、風景、天空、建築物外牆實景
+   - 食物、飲品、文具、書本、iPad/電腦螢幕、課室桌椅（沒有紙盒模型）
+   - 雖然是真實相片，但入面完全沒有「鞋盒 / 紙盒手作模型」
+
+請只回傳有效 JSON 格式：
+{
+  "isShoeboxModel": boolean,
+  "confidence": number,
+  "detectedObject": "用繁體中文簡短指出圖片實際拍到了甚麼（例如：卡通圖案 / 風景相片 / 食物 / 真實鞋盒模型）",
+  "feedbackMessage": "用繁體中文（香港課堂親切語氣）向學生說明原因，並提示學生重新拍攝『陳伯頂樓單位』的鞋盒模型"
+}`;
 
                 const aiRes = await fetchWithBackoff(
-                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`,
                     {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -1725,45 +1802,65 @@ Respond ONLY in valid JSON:
                                 ]
                             }],
                             generationConfig: {
-                                responseMimeType: "application/json"
+                                responseMimeType: "application/json",
+                                responseSchema: {
+                                    type: "OBJECT",
+                                    properties: {
+                                        isShoeboxModel: { type: "BOOLEAN" },
+                                        confidence: { type: "NUMBER" },
+                                        detectedObject: { type: "STRING" },
+                                        feedbackMessage: { type: "STRING" }
+                                    },
+                                    required: ["isShoeboxModel", "detectedObject", "feedbackMessage"]
+                                }
                             }
                         })
                     },
-                    1
+                    2
                 ).catch(() => null);
 
                 const rawText = aiRes?.candidates?.[0]?.content?.parts?.[0]?.text;
                 if (rawText) {
                     const parsed = JSON.parse(rawText);
-                    if (parsed.isShoeboxModel === false) {
+                    const isConfidentShoebox = parsed.isShoeboxModel === true && (parsed.confidence === undefined || parsed.confidence >= 0.65);
+
+                    // Require BOTH AI approval AND basic physical image structure (not a flat cartoon/clipart)
+                    if (!isConfidentShoebox) {
                         return {
                             valid: false,
-                            title: `偵測到「${parsed.detectedObject || '非鞋盒圖片'}」— 請上載相關的鞋盒作品！`,
-                            desc: parsed.feedbackMessage || '這張圖片與陳伯頂樓單位的鞋盒模型無關，請重新拍攝或揀選你的鞋盒模型相片。'
-                        };
-                    } else if (parsed.isShoeboxModel === true) {
-                        return {
-                            valid: true,
-                            title: 'AI 已確認：成功辨識「陳伯頂樓單位」鞋盒模型！',
-                            desc: parsed.feedbackMessage || '相片清楚顯示鞋盒結構，現在可以選擇方案並一鍵生成真實建築效果圖。'
+                            title: `偵測到「${parsed.detectedObject || '非鞋盒圖案'}」— 請上載鞋盒模型相片！`,
+                            desc: parsed.feedbackMessage || '這張圖片不是「陳伯頂樓單位」的鞋盒改造模型，請對準你們組別製作的鞋盒模型重新拍攝！'
                         };
                     }
+
+                    if (!heuristicPreCheck.likelyShoebox) {
+                        return {
+                            valid: false,
+                            title: '這似乎是平面圖案而非實體鞋盒相片！',
+                            desc: heuristicPreCheck.reason
+                        };
+                    }
+
+                    return {
+                        valid: true,
+                        title: `AI 已確認：成功辨識「${parsed.detectedObject || '陳伯頂樓單位鞋盒模型'}」！`,
+                        desc: parsed.feedbackMessage || '相片清楚顯示實體鞋盒結構，現在可以選擇方案並一鍵生成真實建築效果圖。'
+                    };
                 }
 
-                // Step 2: Fallback to local image heuristics if offline or API key not injected
-                const heuristic = analyzeImageHeuristics(img, fileName);
-                if (!heuristic.likelyShoebox) {
+                // Step 3: Strict fallback if API call fails or is offline
+                if (!heuristicPreCheck.likelyShoebox) {
                     return {
                         valid: false,
-                        title: '未能辨識出相關的「鞋盒模型」！',
-                        desc: `${heuristic.reason} 請同學上載或拍攝與「陳伯頂樓單位」相關的鞋盒作品。`
+                        title: '未能辨識出實體「鞋盒模型」！',
+                        desc: `${heuristicPreCheck.reason} 請同學上載或拍攝與「陳伯頂樓單位」相關的實體鞋盒作品。`
                     };
                 }
 
                 return {
                     valid: true,
                     title: '已載入鞋盒模型相片！',
-                    desc: '相片已通過檢查，請在下方選擇「方案 A 或 方案 B」並按一鍵生成效果圖。'
+                    desc: '相片已通過盒體結構與材質檢查，請在下方選擇「方案 A 或 方案 B」並按一鍵生成效果圖。'
                 };
             } catch (e) {
                 const heuristic = analyzeImageHeuristics(img, fileName);
@@ -1943,7 +2040,7 @@ Locate the shoebox bounding box and the best coordinates on the box for:
 Return ONLY valid JSON: {"boxX": number, "boxY": number, "boxW": number, "boxH": number, "highX": number, "highY": number, "lowX": number, "lowY": number}`;
 
                     const coordRes = await fetchWithBackoff(
-                        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+                        `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`,
                         {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
