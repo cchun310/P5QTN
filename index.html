@@ -642,8 +642,8 @@
                     <i class="fa-solid fa-box-open text-2xl text-white"></i>
                 </div>
                 <div>
-                    <h3 class="font-black text-base sm:text-lg">請上載相關的「鞋盒模型」相片！</h3>
-                    <p class="text-xs text-rose-100">AI 偵測到這張圖片可能與鞋盒建築作品無關</p>
+                    <h3 class="font-black text-base sm:text-lg">請拍攝「鞋盒 / 紙盒模型」！</h3>
+                    <p class="text-xs text-rose-100">系統偵測到相片中沒有鞋盒或紙盒（有冇公仔傢俬都唔影響，只要係鞋盒即可！）</p>
                 </div>
             </div>
 
@@ -651,21 +651,20 @@
                 <div class="bg-rose-50 border border-rose-200 rounded-xl p-3.5 text-xs text-rose-900 space-y-1.5">
                     <div class="font-black flex items-center gap-1.5 text-rose-700 text-sm">
                         <i class="fa-solid fa-circle-exclamation"></i>
-                        <span id="invalidModalReasonTitle">未能辨識出鞋盒或紙盒手作結構</span>
+                        <span id="invalidModalReasonTitle">畫面中未見鞋盒或紙盒模型</span>
                     </div>
                     <p id="invalidModalReasonDesc" class="text-slate-700 leading-relaxed">
-                        系統發現相片似乎不是「陳伯頂樓單位的鞋盒模型」（例如：自拍、風景、卡通圖片或課室其他物品）。請對準你親手製作的鞋盒模型重新拍攝！
+                        系統發現相片似乎是人像、風景、書本或空白桌面。只要拍攝任何「鞋盒或紙盒」（盒內有冇公仔或傢俬都可以），系統就能自動為你生成真實建築效果圖！
                     </p>
                 </div>
 
                 <div class="bg-slate-50 border border-slate-200 rounded-xl p-3.5 text-xs text-slate-700 space-y-2">
                     <div class="font-bold text-slate-900 flex items-center gap-1.5">
-                        <i class="fa-solid fa-lightbulb text-amber-500"></i> 拍攝鞋盒作品小貼士：
+                        <i class="fa-solid fa-lightbulb text-amber-500"></i> iPad 拍攝溫馨小貼士：
                     </div>
                     <ul class="list-disc list-inside space-y-1 text-slate-600">
-                        <li>請將<strong>整個鞋盒 / 紙盒模型</strong>放在畫面中央</li>
-                        <li>清楚拍到鞋盒上的<strong>天窗開口、百葉窗或小風扇手作結構</strong></li>
-                        <li>避免只拍到桌面、手部自拍或與課堂無關的圖片</li>
+                        <li>只要拍到<strong>鞋盒、紙盒或卡紙盒</strong>即可出效果圖</li>
+                        <li>盒內<strong>有冇公仔、有冇傢俬都完全唔影響</strong>，AI 會自動為陳伯補上真實家居與降溫設備！</li>
                     </ul>
                 </div>
 
@@ -673,10 +672,16 @@
                     <label onclick="closeInvalidImageModal()" class="touch-card cursor-pointer flex-1 bg-amber-600 hover:bg-amber-500 text-white font-black py-3 px-4 rounded-xl text-xs sm:text-sm text-center flex items-center justify-center gap-2 shadow-sm">
                         <i class="fa-solid fa-camera"></i>
                         <span>重新拍攝 / 揀選鞋盒相</span>
-                        <input type="file" accept="image/*" class="hidden" onchange="handleImageUpload(event)">
+                        <input type="file" accept="image/*" capture="environment" class="hidden" onchange="handleImageUpload(event)">
                     </label>
                     <button onclick="closeInvalidImageModal(); loadSampleShoebox('uncle_chan_flat');" class="touch-card bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold py-3 px-4 rounded-xl text-xs sm:text-sm">
                         用預設鞋盒範本
+                    </button>
+                </div>
+
+                <div class="text-center pt-1 border-t border-slate-100">
+                    <button onclick="forceUsePendingShoeboxImage()" class="text-[11px] font-bold text-slate-500 hover:text-amber-600 underline transition">
+                        這確實是我們的鞋盒作品，直接使用此相片生成效果圖 ➔
                     </button>
                 </div>
             </div>
@@ -722,7 +727,7 @@
          * 2. PHOTO-TO-ARCHITECTURE STRUCTURE ENGINE & CANVAS RENDERERS
          ********************************************************************/
 
-        // Analyze the student's uploaded photo to locate the shoebox bounding box, dark cutouts (windows/vents), and craft elements
+        // Analyze the student's uploaded photo to locate the shoebox bounding box AND multiple actual cutouts/openings
         function extractShoeboxStructureFromPhoto(img) {
             const w = 960;
             const h = 600;
@@ -741,33 +746,34 @@
             const imgData = ctx.getImageData(0, 0, w, h);
             const data = imgData.data;
 
-            // Find strong structural edges & cardboard/box bounding region in central area
-            let minX = w * 0.16, maxX = w * 0.84, minY = h * 0.18, maxY = h * 0.86;
+            let minX = w * 0.16, maxX = w * 0.84, minY = h * 0.16, maxY = h * 0.86;
             let edgePointsX = [];
             let edgePointsY = [];
 
-            // Also find dark cutouts / openings inside the box (top half vs bottom half)
             let topOpeningSumX = 0, topOpeningSumY = 0, topOpeningCount = 0;
             let bottomOpeningSumX = 0, bottomOpeningSumY = 0, bottomOpeningCount = 0;
 
-            for (let y = Math.floor(h * 0.12); y < Math.floor(h * 0.88); y += 4) {
-                for (let x = Math.floor(w * 0.12); x < Math.floor(w * 0.88); x += 4) {
+            // Grid cells to detect distinct cutout windows/openings made by the student
+            const gridCols = 8, gridRows = 5;
+            const cellHits = Array.from({ length: gridCols * gridRows }, () => ({ sumX: 0, sumY: 0, count: 0 }));
+
+            for (let y = Math.floor(h * 0.12); y < Math.floor(h * 0.88); y += 3) {
+                for (let x = Math.floor(w * 0.12); x < Math.floor(w * 0.88); x += 3) {
                     const idx = (y * w + x) * 4;
                     const r = data[idx], g = data[idx + 1], b = data[idx + 2];
-                    const rightIdx = (y * w + Math.min(w - 1, x + 4)) * 4;
-                    const downIdx = (Math.min(h - 1, y + 4) * w + x) * 4;
+                    const rightIdx = (y * w + Math.min(w - 1, x + 3)) * 4;
+                    const downIdx = (Math.min(h - 1, y + 3) * w + x) * 4;
 
                     const grad = Math.abs(r - data[rightIdx]) + Math.abs(g - data[rightIdx + 1]) + Math.abs(b - data[rightIdx + 2]) +
                                  Math.abs(r - data[downIdx]) + Math.abs(g - data[downIdx + 1]) + Math.abs(b - data[downIdx + 2]);
 
-                    if (grad > 95) {
+                    if (grad > 90) {
                         edgePointsX.push(x);
                         edgePointsY.push(y);
                     }
 
-                    // Detect cutouts / drawn openings / darker or high-contrast craft patches
                     const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-                    if (lum < 85 && grad > 45) {
+                    if (lum < 92 && grad > 42) {
                         if (y < h * 0.48) {
                             topOpeningSumX += x;
                             topOpeningSumY += y;
@@ -777,42 +783,334 @@
                             bottomOpeningSumY += y;
                             bottomOpeningCount++;
                         }
+
+                        const gx = Math.min(gridCols - 1, Math.max(0, Math.floor(((x - w * 0.12) / (w * 0.76)) * gridCols)));
+                        const gy = Math.min(gridRows - 1, Math.max(0, Math.floor(((y - h * 0.12) / (h * 0.76)) * gridRows)));
+                        const cell = cellHits[gy * gridCols + gx];
+                        cell.sumX += x;
+                        cell.sumY += y;
+                        cell.count++;
                     }
                 }
             }
 
-            if (edgePointsX.length > 50) {
+            if (edgePointsX.length > 60) {
                 edgePointsX.sort((a, b) => a - b);
                 edgePointsY.sort((a, b) => a - b);
-                minX = Math.max(w * 0.1, edgePointsX[Math.floor(edgePointsX.length * 0.08)]);
-                maxX = Math.min(w * 0.9, edgePointsX[Math.floor(edgePointsX.length * 0.92)]);
+                minX = Math.max(w * 0.10, edgePointsX[Math.floor(edgePointsX.length * 0.08)]);
+                maxX = Math.min(w * 0.90, edgePointsX[Math.floor(edgePointsX.length * 0.92)]);
                 minY = Math.max(h * 0.12, edgePointsY[Math.floor(edgePointsY.length * 0.08)]);
-                maxY = Math.min(h * 0.9, edgePointsY[Math.floor(edgePointsY.length * 0.92)]);
+                maxY = Math.min(h * 0.88, edgePointsY[Math.floor(edgePointsY.length * 0.92)]);
             }
 
-            const boxW = Math.max(320, maxX - minX);
-            const boxH = Math.max(220, maxY - minY);
+            const boxW = Math.max(380, maxX - minX);
+            const boxH = Math.max(250, maxY - minY);
 
-            const highFeatureX = topOpeningCount > 12 ? (topOpeningSumX / topOpeningCount) : (minX + boxW * 0.52);
-            const highFeatureY = topOpeningCount > 12 ? (topOpeningSumY / topOpeningCount) : (minY + boxH * 0.16);
+            const highFeatureX = topOpeningCount > 15 ? (topOpeningSumX / topOpeningCount) : (minX + boxW * 0.52);
+            const highFeatureY = topOpeningCount > 15 ? (topOpeningSumY / topOpeningCount) : (minY + boxH * 0.14);
 
-            const lowFeatureX = bottomOpeningCount > 12 ? (bottomOpeningSumX / bottomOpeningCount) : (minX + boxW * 0.18);
-            const lowFeatureY = bottomOpeningCount > 12 ? (bottomOpeningSumY / bottomOpeningCount) : (minY + boxH * 0.72);
+            const lowFeatureX = bottomOpeningCount > 15 ? (bottomOpeningSumX / bottomOpeningCount) : (minX + boxW * 0.18);
+            const lowFeatureY = bottomOpeningCount > 15 ? (bottomOpeningSumY / bottomOpeningCount) : (minY + boxH * 0.70);
+
+            const detectedOpenings = cellHits
+                .filter(c => c.count >= 14)
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 4)
+                .map(c => ({ x: c.sumX / c.count, y: c.sumY / c.count, weight: c.count }));
 
             return {
                 boxX: minX,
                 boxY: minY,
                 boxW,
                 boxH,
-                highX: Math.max(minX + 50, Math.min(maxX - 80, highFeatureX)),
-                highY: Math.max(minY + 10, Math.min(minY + boxH * 0.42, highFeatureY)),
-                lowX: Math.max(minX + 20, Math.min(maxX - 80, lowFeatureX)),
-                lowY: Math.max(minY + boxH * 0.52, Math.min(maxY - 35, lowFeatureY))
+                highX: Math.max(minX + 70, Math.min(maxX - 90, highFeatureX)),
+                highY: Math.max(minY + 8, Math.min(minY + boxH * 0.38, highFeatureY)),
+                lowX: Math.max(minX + 24, Math.min(maxX - 90, lowFeatureX)),
+                lowY: Math.max(minY + boxH * 0.52, Math.min(maxY - 40, lowFeatureY)),
+                detectedOpenings
             };
         }
 
-        // Photo-to-Architecture Hybrid Renderer: Transforms the student's actual photo into an architectural visualization
-        // while preserving 100% of their camera angle, shoebox silhouette, and craft positions!
+        // Helper: Draw realistic 3D architectural rounded rectangle
+        function fillRoundedRect(ctx, x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + w - r, y);
+            ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+            ctx.lineTo(x + w, y + h - r);
+            ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+            ctx.lineTo(x + r, y + h);
+            ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+            ctx.lineTo(x, y + r);
+            ctx.quadraticCurveTo(x, y, x + r, y);
+            ctx.closePath();
+        }
+
+        // Helper: Draw smooth curved airflow arrow with arrowhead
+        function drawCurvedAirflowArrow(ctx, startX, startY, ctrlX, ctrlY, endX, endY, color, glowColor, lineWidth = 5, dashed = false) {
+            ctx.save();
+            ctx.shadowColor = glowColor;
+            ctx.shadowBlur = 10;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = lineWidth;
+            ctx.lineCap = 'round';
+            if (dashed) ctx.setLineDash([12, 7]);
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.quadraticCurveTo(ctrlX, ctrlY, endX, endY);
+            ctx.stroke();
+
+            // Arrowhead at end
+            ctx.setLineDash([]);
+            const angle = Math.atan2(endY - ctrlY, endX - ctrlX);
+            const headLen = 15;
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.moveTo(endX, endY);
+            ctx.lineTo(endX - headLen * Math.cos(angle - Math.PI / 6), endY - headLen * Math.sin(angle - Math.PI / 6));
+            ctx.lineTo(endX - headLen * Math.cos(angle + Math.PI / 6), endY - headLen * Math.sin(angle + Math.PI / 6));
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // Helper: Render high-detail 3D Architectural Components (Skylight, Louver Window, Exhaust Turbine, Circulator Fan, Sensors) WITHOUT any text labels
+        function renderArchitecturalCoolingOverlay(ctx, w, h, boxX, boxY, boxW, boxH, highX, highY, lowX, lowY, isPhotoComposite = false) {
+            if (appState.enableNaturalVent) {
+                // =========================================================================
+                // 方案 A（不同大小的窗戶）：3D 高處大排熱智能天窗 ＋ 背光低處防曬百葉小窗（無文字純視覺）
+                // =========================================================================
+                const skyW = Math.min(200, boxW * 0.34);
+                const skyH = 40;
+                const sx = Math.max(boxX + 30, Math.min(boxX + boxW - skyW - 30, highX - skyW / 2));
+                const sy = Math.max(boxY - 12, Math.min(boxY + boxH * 0.25, highY - skyH / 2));
+
+                // 1. Warm rising heat plume glow under skylight
+                const heatGrad = ctx.createRadialGradient(sx + skyW / 2, sy + 20, 10, sx + skyW / 2, sy - 40, 130);
+                heatGrad.addColorStop(0, 'rgba(249, 115, 22, 0.38)');
+                heatGrad.addColorStop(0.6, 'rgba(244, 63, 94, 0.16)');
+                heatGrad.addColorStop(1, 'rgba(244, 63, 94, 0)');
+                ctx.fillStyle = heatGrad;
+                ctx.beginPath();
+                ctx.arc(sx + skyW / 2, sy, 130, 0, Math.PI * 2);
+                ctx.fill();
+
+                // 2. Skylight Dark Aluminum Curb & Double-Glazed Opening
+                ctx.save();
+                ctx.shadowColor = 'rgba(0,0,0,0.4)';
+                ctx.shadowBlur = 10;
+                ctx.fillStyle = '#1e293b';
+                ctx.fillRect(sx - 6, sy - 4, skyW + 12, skyH + 8);
+
+                const skyGlassGrad = ctx.createLinearGradient(sx, sy, sx + skyW, sy + skyH);
+                skyGlassGrad.addColorStop(0, 'rgba(14, 165, 233, 0.88)');
+                skyGlassGrad.addColorStop(0.5, 'rgba(186, 230, 253, 0.92)');
+                skyGlassGrad.addColorStop(1, 'rgba(56, 189, 248, 0.85)');
+                ctx.fillStyle = skyGlassGrad;
+                ctx.fillRect(sx, sy, skyW, skyH);
+
+                // Tilted Open Skylight Glass Sash with Hydraulic Struts
+                ctx.translate(sx, sy);
+                ctx.rotate(-0.26);
+                const sashGrad = ctx.createLinearGradient(0, -24, skyW, 0);
+                sashGrad.addColorStop(0, 'rgba(224, 242, 254, 0.95)');
+                sashGrad.addColorStop(0.5, 'rgba(255, 255, 255, 0.98)');
+                sashGrad.addColorStop(1, 'rgba(125, 211, 252, 0.90)');
+                ctx.fillStyle = sashGrad;
+                ctx.fillRect(0, -22, skyW, 20);
+                ctx.strokeStyle = '#0284c7';
+                ctx.lineWidth = 3;
+                ctx.strokeRect(0, -22, skyW, 20);
+                ctx.restore();
+
+                // Hydraulic support struts
+                ctx.strokeStyle = '#94a3b8';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(sx + skyW * 0.25, sy + 8);
+                ctx.lineTo(sx + skyW * 0.22, sy - 18);
+                ctx.moveTo(sx + skyW * 0.78, sy + 8);
+                ctx.lineTo(sx + skyW * 0.74, sy - 28);
+                ctx.stroke();
+
+                // 3. Low-Level Shaded Aluminum Louver Window (背光低處百葉入風窗)
+                const louvW = 74;
+                const louvH = 104;
+                const lx = Math.max(boxX - 10, Math.min(boxX + boxW * 0.45, lowX - louvW / 2));
+                const ly = Math.max(boxY + boxH * 0.42, Math.min(boxY + boxH - louvH - 12, lowY - louvH / 2));
+
+                // Exterior overhang canopy above low window
+                ctx.fillStyle = '#334155';
+                ctx.beginPath();
+                ctx.moveTo(lx - 18, ly - 10);
+                ctx.lineTo(lx + louvW + 12, ly - 10);
+                ctx.lineTo(lx + louvW + 6, ly + 2);
+                ctx.lineTo(lx - 24, ly + 2);
+                ctx.closePath();
+                ctx.fill();
+
+                // Window Frame & Cool Glass Backing
+                ctx.fillStyle = '#0f172a';
+                ctx.fillRect(lx - 4, ly - 4, louvW + 8, louvH + 8);
+                const lowGlassGrad = ctx.createLinearGradient(lx, ly, lx, ly + louvH);
+                lowGlassGrad.addColorStop(0, '#0284c7');
+                lowGlassGrad.addColorStop(1, '#bae6fd');
+                ctx.fillStyle = lowGlassGrad;
+                ctx.fillRect(lx, ly, louvW, louvH);
+
+                // 3D Angled Wooden/Aluminum Louver Blades
+                for (let by = ly + 10; by < ly + louvH - 6; by += 13) {
+                    ctx.fillStyle = '#f8fafc';
+                    ctx.beginPath();
+                    ctx.moveTo(lx - 4, by + 3);
+                    ctx.lineTo(lx + louvW + 4, by - 2);
+                    ctx.lineTo(lx + louvW + 4, by + 4);
+                    ctx.lineTo(lx - 4, by + 8);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+
+                // 4. Visual Natural Convection Streamlines (No text)
+                drawCurvedAirflowArrow(
+                    ctx,
+                    Math.max(25, lx - 60), ly + louvH * 0.55,
+                    lx + 45, ly + louvH * 0.65,
+                    lx + louvW + 90, ly + louvH * 0.45,
+                    '#0ea5e9', 'rgba(14, 165, 233, 0.7)', 5, false
+                );
+                drawCurvedAirflowArrow(
+                    ctx,
+                    lx + louvW + 100, ly + louvH * 0.42,
+                    (lx + sx + skyW / 2) * 0.52, (ly + sy) * 0.58,
+                    sx + skyW * 0.48, sy + skyH + 10,
+                    '#38bdf8', 'rgba(56, 189, 248, 0.6)', 5, true
+                );
+                drawCurvedAirflowArrow(
+                    ctx,
+                    sx + skyW * 0.5, sy + 6,
+                    sx + skyW * 0.52, sy - 38,
+                    sx + skyW * 0.56, Math.max(18, sy - 75),
+                    '#f43f5e', 'rgba(244, 63, 94, 0.8)', 6, false
+                );
+            }
+
+            if (appState.enableSmartFans) {
+                // =========================================================================
+                // 方案 B（不同位置的風扇）：屋頂最高處智能抽氣扇 ＋ 低處角落向上吹循環扇（無文字純視覺）
+                // =========================================================================
+                const fanX = Math.max(boxX + 90, Math.min(boxX + boxW - 90, highX));
+                const fanY = Math.max(boxY + 10, Math.min(boxY + boxH * 0.28, highY));
+
+                // 1. Roof-Peak Smart Exhaust Fan Unit
+                ctx.save();
+                ctx.shadowColor = 'rgba(0,0,0,0.45)';
+                ctx.shadowBlur = 12;
+                ctx.fillStyle = '#1e293b';
+                fillRoundedRect(ctx, fanX - 48, fanY - 38, 96, 76, 12);
+                ctx.fill();
+                ctx.strokeStyle = '#94a3b8';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+
+                // Turbine Fan Housing & Multi-Blades
+                ctx.fillStyle = '#0f172a';
+                ctx.beginPath();
+                ctx.arc(fanX, fanY, 30, 0, Math.PI * 2);
+                ctx.fill();
+
+                for (let b = 0; b < 6; b++) {
+                    ctx.save();
+                    ctx.translate(fanX, fanY);
+                    ctx.rotate((b * Math.PI) / 3 + 0.3);
+                    ctx.fillStyle = '#38bdf8';
+                    ctx.beginPath();
+                    ctx.ellipse(13, 0, 12, 5, 0.25, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+
+                ctx.fillStyle = '#f43f5e';
+                ctx.beginPath();
+                ctx.arc(fanX, fanY, 8, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                // 2. Low-Corner Upward Circulator Fan
+                const circX = Math.max(boxX + 45, Math.min(boxX + boxW * 0.42, lowX));
+                const circY = Math.max(boxY + boxH * 0.58, Math.min(boxY + boxH - 38, lowY));
+
+                ctx.save();
+                ctx.fillStyle = '#334155';
+                ctx.fillRect(circX - 24, circY + 22, 48, 8);
+                ctx.strokeStyle = '#64748b';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.moveTo(circX, circY + 24);
+                ctx.lineTo(circX, circY + 4);
+                ctx.stroke();
+
+                ctx.translate(circX, circY);
+                ctx.rotate(-0.62);
+                ctx.shadowColor = 'rgba(2, 132, 199, 0.5)';
+                ctx.shadowBlur = 12;
+                ctx.fillStyle = '#0284c7';
+                fillRoundedRect(ctx, -28, -28, 56, 56, 28);
+                ctx.fill();
+                ctx.strokeStyle = '#e0f2fe';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+
+                for (let b = 0; b < 5; b++) {
+                    ctx.save();
+                    ctx.rotate((b * Math.PI * 2) / 5);
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.ellipse(10, 0, 10, 4, 0.3, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
+                ctx.restore();
+
+                // 3. Sleek Wall Sensor Icons (Purely visual, no text labels)
+                const sensorRoofX = Math.min(boxX + boxW - 50, fanX + 78);
+                const sensorRoofY = fanY + 6;
+                const sensorLowX = boxX + boxW * 0.72;
+                const sensorLowY = boxY + boxH * 0.62;
+
+                [[sensorRoofX, sensorRoofY], [sensorLowX, sensorLowY]].forEach(([sx, sy]) => {
+                    ctx.save();
+                    ctx.fillStyle = '#0f172a';
+                    fillRoundedRect(ctx, sx - 16, sy - 16, 32, 32, 8);
+                    ctx.fill();
+                    ctx.strokeStyle = '#10b981';
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    ctx.fillStyle = '#34d399';
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, 6, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                });
+
+                // Active Forced-Convection Airflow Streamlines (No text)
+                drawCurvedAirflowArrow(
+                    ctx,
+                    circX + 24, circY - 18,
+                    (circX + fanX) * 0.48, (circY + fanY) * 0.56,
+                    fanX - 10, fanY + 36,
+                    '#38bdf8', 'rgba(56, 189, 248, 0.75)', 6, true
+                );
+                drawCurvedAirflowArrow(
+                    ctx,
+                    fanX, fanY - 32,
+                    fanX + 8, fanY - 65,
+                    fanX + 18, Math.max(16, fanY - 92),
+                    '#f43f5e', 'rgba(244, 63, 94, 0.85)', 6, false
+                );
+            }
+        }
+
+        // Photo-Faithful Architectural Renderer: Preserves 100% of the student's actual photo geometry, folds, cutouts, and perspective while transforming cardboard into architectural materials
         function drawCustomPhotoBasedArchitectureCanvas(canvas) {
             const ctx = canvas.getContext('2d');
             const w = canvas.width;
@@ -822,228 +1120,110 @@
 
             ctx.clearRect(0, 0, w, h);
 
-            // Step 1: Draw the student's actual shoebox photo as the structural base with architectural daylight grading
             const scale = Math.max(w / img.width, h / img.height);
             const dw = img.width * scale;
             const dh = img.height * scale;
             const dx = (w - dw) / 2;
             const dy = (h - dh) / 2;
 
-            ctx.save();
-            ctx.filter = 'contrast(1.14) saturate(1.18) brightness(1.06)';
-            ctx.drawImage(img, dx, dy, dw, dh);
-            ctx.restore();
+            const feat = appState.detectedPhotoFeatures || extractShoeboxStructureFromPhoto(img);
+            const { boxX, boxY, boxW, boxH, highX, highY, lowX, lowY, detectedOpenings = [] } = feat;
 
-            // Step 2: Pixel-level architectural material transformation (turning cardboard tones into clean insulated concrete/wood/glass while preserving all edges & shadows of the student's photo!)
-            const imgData = ctx.getImageData(0, 0, w, h);
-            const data = imgData.data;
-            const copy = new Uint8ClampedArray(data);
+            // Step 1: Pixel-level Material & Lighting Transformation of the Student's Exact Photo!
+            // Converts warm brown/tan cardboard surfaces into crisp white/cool-grey architectural concrete while keeping EVERY edge, shadow, cutout hole, and perspective line intact.
+            const offCanvas = document.createElement('canvas');
+            offCanvas.width = w;
+            offCanvas.height = h;
+            const offCtx = offCanvas.getContext('2d');
+            offCtx.drawImage(img, dx, dy, dw, dh);
 
-            for (let y = 1; y < h - 1; y++) {
-                for (let x = 1; x < w - 1; x++) {
-                    const i = (y * w + x) * 4;
-                    const r = copy[i], g = copy[i + 1], b = copy[i + 2];
+            const imgData = offCtx.getImageData(0, 0, w, h);
+            const d = imgData.data;
 
-                    // Sobel edge magnitude to keep every pencil line, tape, window cutout, and box corner sharp
-                    const iRight = (y * w + (x + 1)) * 4;
-                    const iDown = ((y + 1) * w + x) * 4;
-                    const edge = Math.abs(r - copy[iRight]) + Math.abs(g - copy[iRight + 1]) + Math.abs(b - copy[iRight + 2]) +
-                                 Math.abs(r - copy[iDown]) + Math.abs(g - copy[iDown + 1]) + Math.abs(b - copy[iDown + 2]);
-
-                    // Detect warm brown/tan cardboard surface vs dark interior/cutout vs background
-                    const isCardboardTone = (r > g && g > b && (r - b) > 22 && r > 85 && r < 235);
+            for (let y = 0; y < h; y++) {
+                for (let x = 0; x < w; x++) {
+                    const idx = (y * w + x) * 4;
+                    const r = d[idx], g = d[idx + 1], b = d[idx + 2];
                     const lum = 0.299 * r + 0.587 * g + 0.114 * b;
 
-                    if (isCardboardTone) {
-                        // Transform brown cardboard into bright cool architectural facade (warm white + subtle cool daylight tint) while keeping natural 3D lighting!
-                        const archLum = Math.min(252, lum * 1.18 + 24);
-                        data[i]     = archLum * 0.96; // R
-                        data[i + 1] = archLum * 0.99; // G
-                        data[i + 2] = Math.min(255, archLum * 1.03); // B
-                    } else if (lum < 75) {
-                        // Transform dark interior cutouts into illuminated architectural glass / interior glow
-                        data[i]     = Math.min(255, r * 0.7 + 35);
-                        data[i + 1] = Math.min(255, g * 0.85 + 75);
-                        data[i + 2] = Math.min(255, b * 0.95 + 110);
-                    }
+                    const inBox = (x >= boxX - 25 && x <= boxX + boxW + 25 && y >= boxY - 25 && y <= boxY + boxH + 25);
+                    // Detect warm cardboard / paper hue (R > G >= B)
+                    const isCardboardTone = (r > g + 6 && g >= b - 8 && r > 70 && lum > 55 && lum < 235);
+                    // Detect dark cutout windows / openings or deep interior shadows
+                    const isDarkCutoutOrShadow = (inBox && lum <= 78);
 
-                    // Crisp architectural blueprint/linework reinforcement along the student's actual box edges
-                    if (edge > 78) {
-                        data[i]     = Math.max(15, data[i] - 38);
-                        data[i + 1] = Math.max(23, data[i + 1] - 32);
-                        data[i + 2] = Math.max(42, data[i + 2] - 20);
+                    if (inBox && isCardboardTone) {
+                        // Transform cardboard into bright insulated architectural facade / interior wall while preserving exact shading & folds
+                        const archLum = Math.min(252, lum * 1.18 + 26);
+                        d[idx]     = Math.round(r * 0.22 + archLum * 0.78);
+                        d[idx + 1] = Math.round(g * 0.22 + (archLum + 2) * 0.78);
+                        d[idx + 2] = Math.round(b * 0.20 + Math.min(255, archLum + 8) * 0.80);
+                    } else if (isDarkCutoutOrShadow) {
+                        // Tint cutout openings & deep recesses with realistic blue-tinted architectural glass reflection
+                        d[idx]     = Math.min(255, Math.round(r * 0.65 + 18));
+                        d[idx + 1] = Math.min(255, Math.round(g * 0.75 + 52));
+                        d[idx + 2] = Math.min(255, Math.round(b * 0.85 + 88));
+                    } else if (!inBox && y < boxY + 40) {
+                        // Subtle daylight sky enhancement on upper background
+                        d[idx]     = Math.min(255, Math.round(r * 0.78 + 32));
+                        d[idx + 1] = Math.min(255, Math.round(g * 0.82 + 45));
+                        d[idx + 2] = Math.min(255, Math.round(b * 0.85 + 55));
                     }
                 }
             }
             ctx.putImageData(imgData, 0, 0);
 
-            // Step 3: Subtle sky/daylight atmosphere gradient at the very top while keeping the photo's geometry intact
-            const topGlow = ctx.createLinearGradient(0, 0, 0, h * 0.28);
-            topGlow.addColorStop(0, 'rgba(14, 165, 233, 0.28)');
-            topGlow.addColorStop(1, 'rgba(14, 165, 233, 0)');
-            ctx.fillStyle = topGlow;
-            ctx.fillRect(0, 0, w, h * 0.28);
-
-            // Step 4: Overlay realistic architectural components at the exact detected coordinates of the student's shoebox!
-            const feat = appState.detectedPhotoFeatures || extractShoeboxStructureFromPhoto(img);
-            const { boxX, boxY, boxW, boxH, highX, highY, lowX, lowY } = feat;
-
-            // Draw subtle architectural roof insulation cap aligned to the detected top of the student's shoebox
+            // Step 2: Crisp Edge Enhancement Pass from the original photo so the shoebox's real handmade structure looks ultra-sharp
             ctx.save();
-            ctx.strokeStyle = 'rgba(56, 189, 248, 0.75)';
-            ctx.lineWidth = 3;
-            ctx.setLineDash([10, 6]);
-            ctx.strokeRect(boxX, boxY, boxW, boxH);
+            ctx.globalCompositeOperation = 'multiply';
+            ctx.globalAlpha = 0.22;
+            ctx.filter = 'contrast(1.45) grayscale(1)';
+            ctx.drawImage(img, dx, dy, dw, dh);
             ctx.restore();
 
-            function drawCallout(bx, by, text, bgColor, borderColor) {
-                ctx.save();
-                ctx.font = 'bold 13px "Noto Sans TC", sans-serif';
-                const tw = ctx.measureText(text).width + 20;
-                const clampedX = Math.max(12, Math.min(w - tw - 12, bx));
-                const clampedY = Math.max(12, Math.min(h - 38, by));
-                ctx.fillStyle = bgColor;
-                ctx.fillRect(clampedX, clampedY, tw, 28);
-                ctx.strokeStyle = borderColor;
-                ctx.lineWidth = 2;
-                ctx.strokeRect(clampedX, clampedY, tw, 28);
-                ctx.fillStyle = '#ffffff';
-                ctx.fillText(text, clampedX + 10, clampedY + 19);
-                ctx.restore();
-            }
+            // Step 3: Warm Architectural Interior Cove Lighting & Subtle Furniture Integration inside the shoebox
+            const inX = boxX + 16;
+            const inY = boxY + 14;
+            const inW = boxW - 32;
+            const inH = boxH - 28;
 
-            if (appState.enableNaturalVent) {
-                // === 方案 A（不同大小的窗戶）：對齊學生相片位置渲染【高處大智能天窗】+【低處百葉入風窗】 ===
-                // 1. 高處智能天窗 (Large high-level skylight rendered at detected top opening of student's box)
-                const skyW = Math.min(180, boxW * 0.34);
-                const skyH = 44;
-                const sx = highX - skyW / 2;
-                const sy = highY - skyH / 2;
+            ctx.save();
+            // Warm ceiling LED cove glow inside the box
+            const ledGrad = ctx.createLinearGradient(inX, inY, inX, inY + inH * 0.55);
+            ledGrad.addColorStop(0, 'rgba(254, 240, 138, 0.32)');
+            ledGrad.addColorStop(0.5, 'rgba(224, 242, 254, 0.14)');
+            ledGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            ctx.fillStyle = ledGrad;
+            ctx.fillRect(inX, inY, inW, inH * 0.55);
 
-                const glassGrad = ctx.createLinearGradient(sx, sy, sx, sy + skyH);
-                glassGrad.addColorStop(0, 'rgba(56, 189, 248, 0.88)');
-                glassGrad.addColorStop(1, 'rgba(186, 230, 253, 0.78)');
-                ctx.fillStyle = glassGrad;
-                ctx.fillRect(sx, sy, skyW, skyH);
-                ctx.strokeStyle = '#0284c7';
-                ctx.lineWidth = 3.5;
-                ctx.strokeRect(sx, sy, skyW, skyH);
+            // Subtle wooden floor reflection strip at the bottom of the box
+            const floorY = inY + inH - 10;
+            ctx.fillStyle = 'rgba(180, 83, 9, 0.42)';
+            ctx.fillRect(inX + 8, floorY, inW - 16, 10);
 
-                // Tilted open glass sash on top
-                ctx.save();
-                ctx.translate(sx, sy);
-                ctx.rotate(-0.22);
-                ctx.fillStyle = 'rgba(224, 242, 254, 0.85)';
-                ctx.fillRect(0, -14, skyW, 14);
-                ctx.strokeStyle = '#0369a1';
-                ctx.lineWidth = 2.5;
-                ctx.strokeRect(0, -14, skyW, 14);
-                ctx.restore();
-
-                // 2. 低處百葉入風窗 (Low shaded louver window rendered at detected low opening of student's box)
-                const louvW = 68;
-                const louvH = 86;
-                const lx = lowX - louvW / 2;
-                const ly = lowY - louvH / 2;
-
-                ctx.fillStyle = 'rgba(14, 165, 233, 0.85)';
-                ctx.fillRect(lx, ly, louvW, louvH);
-                ctx.strokeStyle = '#0f172a';
-                ctx.lineWidth = 3;
-                ctx.strokeRect(lx, ly, louvW, louvH);
-                for (let bladeY = ly + 10; bladeY < ly + louvH - 6; bladeY += 12) {
-                    ctx.fillStyle = '#f8fafc';
-                    ctx.fillRect(lx - 3, bladeY, louvW + 6, 4);
+            // Transform any detected cutout holes on the student's photo into realistic glass window frames
+            detectedOpenings.forEach(op => {
+                const distHigh = Math.hypot(op.x - highX, op.y - highY);
+                const distLow = Math.hypot(op.x - lowX, op.y - lowY);
+                if (distHigh > 70 && distLow > 70) {
+                    ctx.save();
+                    const glassGrad = ctx.createLinearGradient(op.x - 26, op.y - 20, op.x + 26, op.y + 20);
+                    glassGrad.addColorStop(0, 'rgba(56, 189, 248, 0.45)');
+                    glassGrad.addColorStop(0.5, 'rgba(224, 242, 254, 0.55)');
+                    glassGrad.addColorStop(1, 'rgba(2, 132, 199, 0.45)');
+                    ctx.fillStyle = glassGrad;
+                    ctx.strokeStyle = 'rgba(30, 41, 59, 0.85)';
+                    ctx.lineWidth = 2.5;
+                    fillRoundedRect(ctx, op.x - 26, op.y - 20, 52, 40, 4);
+                    ctx.fill();
+                    ctx.stroke();
+                    ctx.restore();
                 }
+            });
+            ctx.restore();
 
-                // Dynamic Buoyancy Airflow Curve connecting the student's actual low window to high skylight
-                ctx.save();
-                ctx.strokeStyle = '#0ea5e9';
-                ctx.lineWidth = 5;
-                ctx.setLineDash([10, 6]);
-                ctx.beginPath();
-                ctx.moveTo(lx - 35, ly + louvH / 2);
-                ctx.quadraticCurveTo((lx + sx) / 2, ly + 10, sx + skyW / 2, sy + skyH / 2);
-                ctx.stroke();
-
-                ctx.strokeStyle = '#f43f5e';
-                ctx.setLineDash([]);
-                ctx.beginPath();
-                ctx.moveTo(sx + skyW / 2, sy);
-                ctx.lineTo(sx + skyW / 2, Math.max(18, sy - 65));
-                ctx.stroke();
-                ctx.restore();
-
-                drawCallout(sx - 20, Math.max(14, sy - 46), '✨ 相片對齊：【高處智能天窗】排走上升熱氣', 'rgba(15, 23, 42, 0.9)', '#f59e0b');
-                drawCallout(lx - 10, Math.min(h - 38, ly + louvH + 10), '🌬️ 相片對齊：【低處百葉窗】引入涼風', 'rgba(15, 23, 42, 0.9)', '#38bdf8');
-            }
-
-            if (appState.enableSmartFans) {
-                // === 方案 B（不同位置的風扇）：對齊學生相片位置渲染【屋頂智能抽氣扇】+【低處角落循環風扇】+【溫度感應器】 ===
-                // 1. 屋頂最高處智能抽氣扇
-                const fanX = highX;
-                const fanY = highY;
-                ctx.fillStyle = 'rgba(30, 41, 59, 0.92)';
-                ctx.fillRect(fanX - 44, fanY - 34, 88, 68);
-                ctx.strokeStyle = '#f43f5e';
-                ctx.lineWidth = 3;
-                ctx.strokeRect(fanX - 44, fanY - 34, 88, 68);
-                ctx.fillStyle = '#0f172a';
-                ctx.beginPath();
-                ctx.arc(fanX, fanY, 24, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.strokeStyle = '#38bdf8';
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.arc(fanX, fanY, 16, 0, Math.PI * 1.6);
-                ctx.stroke();
-
-                // 2. 低處角落循環風扇（向上吹）
-                const circX = lowX;
-                const circY = lowY;
-                ctx.save();
-                ctx.translate(circX, circY);
-                ctx.rotate(-0.55);
-                ctx.fillStyle = 'rgba(2, 132, 199, 0.92)';
-                ctx.beginPath();
-                ctx.arc(0, 0, 26, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.strokeStyle = '#ffffff';
-                ctx.lineWidth = 3;
-                ctx.stroke();
-                ctx.restore();
-
-                // 3. 溫度感應器 (1.2m height & under roof)
-                const sensorX = boxX + boxW * 0.72;
-                const sensorY = boxY + boxH * 0.56;
-                ctx.fillStyle = '#10b981';
-                ctx.fillRect(sensorX - 22, sensorY - 14, 44, 28);
-                ctx.strokeStyle = '#ffffff';
-                ctx.lineWidth = 2;
-                ctx.strokeRect(sensorX - 22, sensorY - 14, 44, 28);
-
-                // Airflow path from student's low fan to high exhaust fan
-                ctx.save();
-                ctx.strokeStyle = '#38bdf8';
-                ctx.lineWidth = 5;
-                ctx.setLineDash([10, 6]);
-                ctx.beginPath();
-                ctx.moveTo(circX + 15, circY - 15);
-                ctx.quadraticCurveTo((circX + fanX) / 2, (circY + fanY) / 2 + 25, fanX, fanY + 25);
-                ctx.stroke();
-
-                ctx.strokeStyle = '#f43f5e';
-                ctx.setLineDash([]);
-                ctx.beginPath();
-                ctx.moveTo(fanX, fanY - 25);
-                ctx.lineTo(fanX, Math.max(18, fanY - 80));
-                ctx.stroke();
-                ctx.restore();
-
-                drawCallout(fanX - 90, Math.max(14, fanY - 68), '🌀 相片對齊：【屋頂最高處智能抽氣扇】抽走熱氣', 'rgba(15, 23, 42, 0.9)', '#f43f5e');
-                drawCallout(circX - 40, Math.min(h - 38, circY + 32), '↗️ 相片對齊：【低處角落循環風扇】向上吹', 'rgba(15, 23, 42, 0.9)', '#38bdf8');
-                drawCallout(sensorX - 80, sensorY - 46, '🌡️ 【溫度感應器】自動控制開關', 'rgba(6, 78, 59, 0.92)', '#10b981');
-            }
+            // Step 4: Render 3D Skylight/Louvers (Plan A) or Smart Fans (Plan B) directly onto the photo's detected high/low positions (NO text labels)
+            renderArchitecturalCoolingOverlay(ctx, w, h, boxX, boxY, boxW, boxH, highX, highY, lowX, lowY, true);
         }
 
         // Draw student's handmade shoebox model showing the selected 1-of-2 design
@@ -1097,31 +1277,6 @@
             ctx.lineWidth = 2;
             ctx.strokeRect(202, 222, 556, 235);
 
-            // Uncle Chan paper craft figure standing inside (height ~1.2m sensor reference)
-            ctx.fillStyle = '#fde68a';
-            ctx.beginPath();
-            ctx.arc(490, 355, 16, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#3b82f6';
-            ctx.fillRect(476, 372, 28, 65);
-            ctx.fillStyle = '#1e293b';
-            ctx.font = 'bold 12px "Noto Sans TC", sans-serif';
-            ctx.fillText('陳伯公仔 (高約1.2m)', 442, 452);
-
-            // Helper for craft labels
-            function drawLabelBadge(lx, ly, text, bgColor = 'rgba(15, 23, 42, 0.88)') {
-                ctx.save();
-                ctx.font = 'bold 13px "Noto Sans TC", sans-serif';
-                const tw = ctx.measureText(text).width + 18;
-                ctx.fillStyle = bgColor;
-                ctx.fillRect(lx, ly, tw, 26);
-                ctx.strokeStyle = '#fbbf24';
-                ctx.lineWidth = 1.5;
-                ctx.strokeRect(lx, ly, tw, 26);
-                ctx.fillStyle = '#fef3c7';
-                ctx.fillText(text, lx + 9, ly + 18);
-                ctx.restore();
-            }
             // Uncle Chan paper craft figure standing inside
             ctx.fillStyle = '#fde68a';
             ctx.beginPath();
@@ -1237,7 +1392,7 @@
 
         // Draw Photorealistic Architectural Cutaway Render matching the selected 1-of-2 cooling design
         function drawPhotorealisticArchitectureCanvas(canvas) {
-            // If student uploaded their own photo, render directly from their photo's geometry & perspective instead of the preset graphic!
+            // If student uploaded their own photo, render directly from their photo's geometry & perspective!
             if (appState.isCustomUpload && appState.customUploadedImageObj) {
                 drawCustomPhotoBasedArchitectureCanvas(canvas);
                 return;
@@ -1248,193 +1403,122 @@
             const h = canvas.height;
             ctx.clearRect(0, 0, w, h);
 
-            // Bright comfortable sky & Hong Kong urban greenery backdrop
-            const skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.65);
-            skyGrad.addColorStop(0, '#0284c7');
-            skyGrad.addColorStop(0.55, '#7dd3fc');
+            // 1. Rich Hong Kong Daylight Sky & Distant Urban Skyline Silhouette
+            const skyGrad = ctx.createLinearGradient(0, 0, 0, h * 0.68);
+            skyGrad.addColorStop(0, '#0369a1');
+            skyGrad.addColorStop(0.45, '#38bdf8');
             skyGrad.addColorStop(1, '#e0f2fe');
             ctx.fillStyle = skyGrad;
             ctx.fillRect(0, 0, w, h);
 
-            // Ground / Terrace Floor
-            const groundGrad = ctx.createLinearGradient(0, h * 0.62, 0, h);
-            groundGrad.addColorStop(0, '#475569');
-            groundGrad.addColorStop(1, '#1e293b');
+            // Soft sun & distant buildings
+            ctx.fillStyle = 'rgba(254, 240, 138, 0.32)';
+            ctx.beginPath();
+            ctx.arc(820, 95, 52, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = 'rgba(148, 163, 184, 0.35)';
+            [[60, 260, 75, 220], [145, 290, 60, 190], [790, 250, 85, 230], [885, 285, 65, 195]].forEach(([bx, by, bw, bh]) => {
+                ctx.fillRect(bx, by, bw, bh);
+            });
+
+            // 2. Rooftop Terrace & Greenery Context
+            const groundGrad = ctx.createLinearGradient(0, 455, 0, h);
+            groundGrad.addColorStop(0, '#64748b');
+            groundGrad.addColorStop(0.3, '#334155');
+            groundGrad.addColorStop(1, '#0f172a');
             ctx.fillStyle = groundGrad;
-            ctx.fillRect(0, h * 0.64, w, h * 0.36);
+            ctx.fillRect(0, 455, w, h - 455);
 
-            // Building Slab & Refurbished Top-Floor Structure
-            ctx.fillStyle = '#cbd5e1';
-            ctx.fillRect(145, 465, 670, 26);
+            // Shaded greenery trees on the left (providing cool shaded intake air)
+            ctx.fillStyle = '#15803d';
+            ctx.beginPath();
+            ctx.arc(92, 375, 56, 0, Math.PI * 2);
+            ctx.arc(135, 405, 44, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = '#166534';
+            ctx.fillRect(86, 420, 14, 45);
 
-            // Outer Architectural Wall
+            // 3. 3D Architectural Cutaway Box of Uncle Chan's Top-Floor Flat
+            const boxX = 175, boxY = 195, boxW = 610, boxH = 268;
+
+            // Concrete Floor Slab & Reflective Cool Roof Overhang
+            ctx.fillStyle = '#94a3b8';
+            fillRoundedRect(ctx, 145, 462, 670, 26, 6);
+            ctx.fill();
+
+            // Insulated Outer Architectural Walls with 3D depth shadow
+            ctx.save();
+            ctx.shadowColor = 'rgba(15, 23, 42, 0.38)';
+            ctx.shadowBlur = 22;
             ctx.fillStyle = '#f8fafc';
-            ctx.fillRect(175, 200, 610, 265);
-            ctx.strokeStyle = '#64748b';
-            ctx.lineWidth = 3;
-            ctx.strokeRect(175, 200, 610, 265);
+            fillRoundedRect(ctx, boxX, boxY, boxW, boxH, 6);
+            ctx.fill();
+            ctx.restore();
 
-            // Cool Comfortable Interior Cutaway
-            const roomGrad = ctx.createLinearGradient(202, 222, 202, 457);
-            roomGrad.addColorStop(0, '#f0f9ff');
+            // Double-layer heat-reflective roof slab
+            const roofSlabGrad = ctx.createLinearGradient(160, 176, 160, 202);
+            roofSlabGrad.addColorStop(0, '#ffffff');
+            roofSlabGrad.addColorStop(1, '#cbd5e1');
+            ctx.fillStyle = roofSlabGrad;
+            fillRoundedRect(ctx, 158, 178, 644, 22, 6);
+            ctx.fill();
+            ctx.strokeStyle = '#64748b';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // 4. Cozy, Cool & Realistic Interior Apartment Cutaway for Uncle Chan
+            const roomGrad = ctx.createLinearGradient(202, 218, 202, 448);
+            roomGrad.addColorStop(0, '#e0f2fe');
+            roomGrad.addColorStop(0.55, '#f8fafc');
             roomGrad.addColorStop(1, '#fef3c7');
             ctx.fillStyle = roomGrad;
-            ctx.fillRect(202, 222, 556, 235);
+            ctx.fillRect(202, 218, 556, 232);
 
-            // Wood Flooring inside Uncle Chan's flat
+            // Interior back wall subtle grid/panels & warm cove light
+            ctx.strokeStyle = 'rgba(148, 163, 184, 0.22)';
+            ctx.lineWidth = 1;
+            for (let gx = 260; gx < 740; gx += 80) {
+                ctx.beginPath();
+                ctx.moveTo(gx, 218);
+                ctx.lineTo(gx, 442);
+                ctx.stroke();
+            }
+
+            // Wooden flooring
             ctx.fillStyle = '#b45309';
-            ctx.fillRect(202, 443, 556, 14);
+            ctx.fillRect(202, 440, 556, 12);
 
-            // Uncle Chan relaxing comfortably inside
+            // Living room furniture (Wooden armchair, small tea table, indoor potted plant)
+            ctx.fillStyle = '#d97706';
+            fillRoundedRect(ctx, 355, 392, 78, 48, 8);
+            ctx.fill();
+            ctx.fillStyle = '#fef3c7';
+            fillRoundedRect(ctx, 363, 398, 62, 24, 6);
+            ctx.fill();
+
+            // Small table & teacup
+            ctx.fillStyle = '#78350f';
+            ctx.fillRect(545, 405, 58, 8);
+            ctx.fillRect(553, 413, 6, 27);
+            ctx.fillRect(589, 413, 6, 27);
+
+            // Uncle Chan figure comfortably relaxing in cool flat
             ctx.fillStyle = '#fde68a';
             ctx.beginPath();
-            ctx.arc(490, 355, 16, 0, Math.PI * 2);
+            ctx.arc(490, 350, 17, 0, Math.PI * 2);
             ctx.fill();
             ctx.fillStyle = '#10b981';
-            ctx.fillRect(476, 372, 28, 68);
+            fillRoundedRect(ctx, 474, 369, 32, 71, 8);
+            ctx.fill();
 
-            // Callout tag helper
-            function drawArchBadge(bx, by, text, bgColor = '#0f172a', borderColor = '#38bdf8') {
-                ctx.save();
-                ctx.font = 'bold 13px "Noto Sans TC", sans-serif';
-                const tw = ctx.measureText(text).width + 20;
-                ctx.fillStyle = bgColor;
-                ctx.fillRect(bx, by, tw, 28);
-                ctx.strokeStyle = borderColor;
-                ctx.lineWidth = 2;
-                ctx.strokeRect(bx, by, tw, 28);
-                ctx.fillStyle = '#ffffff';
-                ctx.fillText(text, bx + 10, by + 19);
-                ctx.restore();
-            }
+            // 5. Render High-Detail 3D Cooling Components (Plan A Windows or Plan B Smart Fans)
+            const highX = appState.enableNaturalVent ? 470 : 585;
+            const highY = appState.enableNaturalVent ? 196 : 178;
+            const lowX = appState.enableNaturalVent ? 192 : 258;
+            const lowY = appState.enableNaturalVent ? 388 : 412;
 
-            if (appState.enableNaturalVent) {
-                // === 方案 A 真實建築效果圖：高處智能天窗 + 背光陰涼處【低處百葉入風窗】 ===
-                // Shaded side tree & cool shadow on left
-                ctx.fillStyle = '#15803d';
-                ctx.beginPath();
-                ctx.arc(95, 360, 58, 0, Math.PI * 2);
-                ctx.fill();
-
-                // 1. 低處牆壁（背光陰涼處）：【低處百葉入風窗】鋁合金百葉窗
-                ctx.fillStyle = '#0ea5e9';
-                ctx.fillRect(172, 352, 32, 88);
-                ctx.strokeStyle = '#0369a1';
-                ctx.lineWidth = 3;
-                ctx.strokeRect(172, 352, 32, 88);
-                for (let ly = 362; ly <= 432; ly += 12) {
-                    ctx.fillStyle = '#e2e8f0';
-                    ctx.fillRect(168, ly, 40, 4);
-                }
-
-                // 2. 屋頂/高牆：【高處智能天窗】自動開啟玻璃天窗
-                ctx.fillStyle = '#38bdf8';
-                ctx.fillRect(370, 185, 200, 30);
-                ctx.strokeStyle = '#0284c7';
-                ctx.lineWidth = 3;
-                ctx.strokeRect(370, 185, 200, 30);
-                ctx.save();
-                ctx.translate(370, 185);
-                ctx.rotate(-0.3);
-                ctx.fillStyle = 'rgba(186, 230, 253, 0.88)';
-                ctx.fillRect(0, -12, 200, 12);
-                ctx.strokeStyle = '#0284c7';
-                ctx.strokeRect(0, -12, 200, 12);
-                ctx.restore();
-
-                // Natural Buoyancy Airflow Streamlines
-                ctx.strokeStyle = '#0284c7';
-                ctx.lineWidth = 5;
-                ctx.beginPath();
-                ctx.moveTo(110, 395);
-                ctx.lineTo(255, 395);
-                ctx.stroke();
-
-                ctx.strokeStyle = '#38bdf8';
-                ctx.setLineDash([8, 5]);
-                ctx.beginPath();
-                ctx.moveTo(260, 395);
-                ctx.quadraticCurveTo(385, 335, 465, 235);
-                ctx.stroke();
-
-                ctx.strokeStyle = '#f43f5e';
-                ctx.setLineDash([]);
-                ctx.beginPath();
-                ctx.moveTo(470, 245);
-                ctx.lineTo(470, 118);
-                ctx.stroke();
-
-                drawArchBadge(300, 82, '✨ 屋頂【高處智能天窗】：輕的熱空氣自動往上排走', '#0f172a', '#f59e0b');
-                drawArchBadge(45, 308, '🌬️ 背光陰涼處【低處百葉入風窗】：引入室外涼爽鮮風', '#0f172a', '#38bdf8');
-            }
-
-            if (appState.enableSmartFans) {
-                // === 方案 B 真實建築效果圖：屋頂最高處智能抽氣扇 + 低處角落循環風扇向上吹 + 溫度感應器 ===
-                // 1. 屋頂最高處：【智能抽氣扇】
-                ctx.fillStyle = '#334155';
-                ctx.fillRect(520, 145, 130, 58);
-                ctx.strokeStyle = '#94a3b8';
-                ctx.lineWidth = 3;
-                ctx.strokeRect(520, 145, 130, 58);
-                ctx.fillStyle = '#0f172a';
-                ctx.beginPath();
-                ctx.arc(585, 174, 22, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.strokeStyle = '#38bdf8';
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.arc(585, 174, 15, 0, Math.PI * 1.5);
-                ctx.stroke();
-
-                // 2. 低處角落：【循環風扇】向上吹
-                ctx.save();
-                ctx.translate(250, 420);
-                ctx.rotate(-0.6);
-                ctx.fillStyle = '#0284c7';
-                ctx.beginPath();
-                ctx.arc(0, 0, 22, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.strokeStyle = '#e0f2fe';
-                ctx.lineWidth = 3;
-                ctx.stroke();
-                ctx.restore();
-
-                // 3. 【溫度感應器】安裝在長者活動高度(約1.2米)及屋頂下方
-                ctx.fillStyle = '#10b981';
-                ctx.fillRect(465, 226, 36, 24);
-                ctx.fillRect(715, 365, 36, 24);
-
-                // Smart sensor wireless control lines
-                ctx.strokeStyle = '#10b981';
-                ctx.lineWidth = 2;
-                ctx.setLineDash([4, 4]);
-                ctx.beginPath();
-                ctx.moveTo(483, 226);
-                ctx.lineTo(565, 195);
-                ctx.moveTo(715, 377);
-                ctx.lineTo(270, 420);
-                ctx.stroke();
-
-                // Active convection airflow arrows
-                ctx.strokeStyle = '#38bdf8';
-                ctx.lineWidth = 5;
-                ctx.setLineDash([8, 4]);
-                ctx.beginPath();
-                ctx.moveTo(275, 405);
-                ctx.quadraticCurveTo(420, 315, 565, 215);
-                ctx.stroke();
-
-                ctx.strokeStyle = '#f43f5e';
-                ctx.setLineDash([]);
-                ctx.beginPath();
-                ctx.moveTo(585, 240);
-                ctx.lineTo(585, 105);
-                ctx.stroke();
-
-                drawArchBadge(450, 72, '🌀 【屋頂最高處：智能抽氣扇】主動抽走上升熱氣', '#0f172a', '#f43f5e');
-                drawArchBadge(180, 466, '↗️ 【低處角落：循環風扇】向上吹加速對流', '#0f172a', '#38bdf8');
-                drawArchBadge(465, 315, '🌡️ 【溫度感應器】1.2m長者高度+屋頂下方自動控制開關', '#064e3b', '#10b981');
-            }
+            renderArchitecturalCoolingOverlay(ctx, w, h, boxX, boxY, boxW, boxH, highX, highY, lowX, lowY, false);
         }
 
         /********************************************************************
@@ -1584,6 +1668,16 @@
             modal.classList.remove('flex');
         }
 
+        function forceUsePendingShoeboxImage() {
+            closeInvalidImageModal();
+            if (appState.pendingRejectedImage) {
+                applyValidatedImageToCanvas(appState.pendingRejectedImage, appState.pendingRejectedFileName || '學生鞋盒相片');
+                showPhotoValidationBanner(true, '已載入鞋盒相片！', '有冇公仔傢俬都唔影響，系統已自動在效果圖補上完整家居與降溫設計。');
+                saveCurrentToGallery(true);
+                showToast('已載入鞋盒相片並生成真實建築效果圖！', 'fa-check');
+            }
+        }
+
         function applyValidatedImageToCanvas(img, fileNameLabel) {
             appState.isCustomUpload = true;
             appState.customUploadedImageObj = img;
@@ -1615,25 +1709,22 @@
             syncSideBySideImages();
         }
 
-        // Strict Computer-Vision Heuristics + Gemini Vision check to verify if uploaded photo is truly a physical shoebox/cardboard craft model
+        // Relaxed Heuristic: As long as it is not an obvious digital cartoon, screenshot, text page, or selfie, allow any shoebox/cardboard box photo (with or without dolls/furniture)!
         function analyzeImageHeuristics(img, fileName = '') {
             const lowerName = fileName.toLowerCase();
             const irrelevantKeywords = [
-                'selfie', 'avatar', 'meme', 'cat', 'dog', 'food', 'game', 'screenshot',
-                'wallpaper', 'car', 'flower', 'person', 'face', 'icon', 'logo', 'cartoon',
-                'anime', 'clipart', 'vector', 'poster', 'banner', 'chart', 'diagram'
+                'selfie', 'avatar', 'meme', 'screenshot', 'wallpaper', 'icon', 'logo', 'cartoon', 'anime', 'clipart'
             ];
             for (const kw of irrelevantKeywords) {
                 if (lowerName.includes(kw)) {
                     return {
                         likelyShoebox: false,
-                        reason: `檔案名稱或特徵顯示這是一張非鞋盒圖片 (${kw})，請拍攝實體鞋盒改造模型。`
+                        reason: `檔案名稱顯示這是一張非鞋盒圖片 (${kw})，請拍攝鞋盒模型。`
                     };
                 }
             }
 
-            // Analyze 96x96 pixel grid for physical box geometry, cardboard/paper color distribution, and digital flat-fill detection
-            const W = 96, H = 96;
+            const W = 120, H = 120;
             const off = document.createElement('canvas');
             off.width = W;
             off.height = H;
@@ -1641,120 +1732,69 @@
             octx.drawImage(img, 0, 0, W, H);
             const data = octx.getImageData(0, 0, W, H).data;
 
-            let totalPixels = W * H;
-            let exactIdenticalNeighbors = 0; // High in digital graphics, cartoons, screenshots, clipart
-            let cardboardBrownTanPixels = 0; // Brown/kraft/beige/white-box craft tones
-            let vividNeonOrSkyPixels = 0;    // Pure saturated sky/grass/cartoon colors
-            let skinLikePixels = 0;          // Portraits / selfies
-            let strongHorizEdges = 0;        // Box horizontal edges
-            let strongVertEdges = 0;         // Box vertical edges
-            let diagonalOrganicEdges = 0;    // Trees, faces, animals, random objects
-            let centerBoxPresence = 0;       // Box presence in central region
+            const totalPixels = W * H;
+            let exactIdenticalNeighbors = 0;
+            let structuralEdges = 0;
+            let textLikeHighFreqRows = 0;
 
             for (let y = 1; y < H - 1; y++) {
+                let rowRapidAlternations = 0;
+                let prevSign = 0;
+
                 for (let x = 1; x < W - 1; x++) {
                     const idx = (y * W + x) * 4;
-                    const r = data[idx], g = data[idx + 1], b = data[idx + 2];
-                    const a = data[idx + 3];
+                    const r = data[idx], g = data[idx + 1], b = data[idx + 2], a = data[idx + 3];
 
-                    // Transparent PNG clipart/sticker -> definitely not a camera photo of a shoebox
-                    if (a < 240) {
+                    if (a < 200) {
                         return {
                             likelyShoebox: false,
-                            reason: '系統偵測到這是一張去背圖案或貼圖 (PNG 透明背景)，請上載真實拍攝的鞋盒模型相片！'
+                            reason: '系統偵測到這是一張透明去背貼圖，請用 iPad 拍攝鞋盒模型！'
                         };
                     }
 
                     const idxRight = (y * W + (x + 1)) * 4;
                     const idxDown = ((y + 1) * W + x) * 4;
-                    const drH = Math.abs(r - data[idxRight]);
-                    const dgH = Math.abs(g - data[idxRight + 1]);
-                    const dbH = Math.abs(b - data[idxRight + 2]);
-                    const drV = Math.abs(r - data[idxDown]);
-                    const dgV = Math.abs(g - data[idxDown + 1]);
-                    const dbV = Math.abs(b - data[idxDown + 2]);
+                    const diffH = Math.abs(r - data[idxRight]) + Math.abs(g - data[idxRight + 1]) + Math.abs(b - data[idxRight + 2]);
+                    const diffV = Math.abs(r - data[idxDown]) + Math.abs(g - data[idxDown + 1]) + Math.abs(b - data[idxDown + 2]);
 
-                    const diffH = drH + dgH + dbH;
-                    const diffV = drV + dgV + dbV;
-
-                    // 1. Check for flat digital solid color fills (screenshots, cartoons, logos, diagrams)
-                    if (diffH <= 2 && diffV <= 2) {
+                    if (diffH <= 1 && diffV <= 1) {
                         exactIdenticalNeighbors++;
                     }
+                    if (diffH > 45 || diffV > 45) {
+                        structuralEdges++;
+                    }
 
-                    // 2. Color family classification
-                    const maxC = Math.max(r, g, b);
-                    const minC = Math.min(r, g, b);
-                    const sat = maxC === 0 ? 0 : (maxC - minC) / maxC;
                     const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-
-                    // Cardboard / Kraft paper / Carton box / Craft wood / White box in indoor lighting
-                    const isCardboardWarm = (r > g && g >= b && (r - b) >= 18 && (r - b) <= 135 && r >= 75 && r <= 238 && sat >= 0.10 && sat <= 0.68);
-                    const isBoxNeutralSurface = (lum >= 85 && lum <= 235 && sat < 0.20 && diffH < 45 && diffV < 45);
-                    if (isCardboardWarm) {
-                        cardboardBrownTanPixels++;
-                        if (x > W * 0.2 && x < W * 0.8 && y > H * 0.2 && y < H * 0.8) {
-                            centerBoxPresence++;
-                        }
-                    } else if (isBoxNeutralSurface && x > W * 0.22 && x < W * 0.78 && y > H * 0.22 && y < H * 0.78) {
-                        centerBoxPresence += 0.35;
-                    }
-
-                    // Vivid saturated non-cardboard colors (cartoons, landscapes, food, colourful posters)
-                    if (sat > 0.62 && !isCardboardWarm) {
-                        vividNeonOrSkyPixels++;
-                    }
-
-                    // Skin tone heuristic (faces / selfies / hands filling the camera)
-                    if (r > 95 && g > 40 && b > 20 && (r - g) > 15 && r > b && sat > 0.18 && sat < 0.58 && !isCardboardWarm) {
-                        skinLikePixels++;
-                    }
-
-                    // 3. Structural Box Edge Orientation (Shoeboxes have distinct horizontal & vertical edges)
-                    if (diffV > 75 && diffH < 38) {
-                        strongHorizEdges++;
-                    } else if (diffH > 75 && diffV < 38) {
-                        strongVertEdges++;
-                    } else if (diffH > 65 && diffV > 65) {
-                        diagonalOrganicEdges++;
+                    const lumRight = 0.299 * data[idxRight] + 0.587 * data[idxRight + 1] + 0.114 * data[idxRight + 2];
+                    const delta = lumRight - lum;
+                    if (Math.abs(delta) > 55) {
+                        const sign = delta > 0 ? 1 : -1;
+                        if (prevSign !== 0 && sign !== prevSign) rowRapidAlternations++;
+                        prevSign = sign;
                     }
                 }
+                if (rowRapidAlternations >= 14) textLikeHighFreqRows++;
             }
 
             const flatDigitalRatio = exactIdenticalNeighbors / totalPixels;
-            const cardboardRatio = cardboardBrownTanPixels / totalPixels;
-            const vividRatio = vividNeonOrSkyPixels / totalPixels;
-            const orthogonalEdges = strongHorizEdges + strongVertEdges;
 
-            // Rule 1: Reject flat digital illustrations, cartoons, icons, text screenshots, or blank images
-            if (flatDigitalRatio > 0.36) {
+            // Only reject pure flat digital graphics/screenshots or dense text pages or completely blank frames
+            if (flatDigitalRatio > 0.55) {
                 return {
                     likelyShoebox: false,
-                    reason: '系統偵測到這是平面圖案、卡通插畫或螢幕截圖，並非真實拍攝的立體鞋盒模型相片！'
+                    reason: '系統偵測到這是純色畫面或平面截圖，請用 iPad 拍攝鞋盒模型！'
                 };
             }
-
-            // Rule 2: Reject images with overly vivid/saturated colors (e.g. cartoons, flowers, food, outdoor scenery)
-            if (vividRatio > 0.28) {
+            if (textLikeHighFreqRows > H * 0.38) {
                 return {
                     likelyShoebox: false,
-                    reason: '相片色彩屬於鮮豔圖案、風景或日常物品，未能辨識出瓦通紙盒或鞋盒模型材質。'
+                    reason: '系統偵測到畫面主要是書本文字或工作紙，請對準鞋盒模型拍攝！'
                 };
             }
-
-            // Rule 3: Require real cardboard/craft color presence in the central region of the photo
-            if (cardboardRatio < 0.08 || centerBoxPresence < totalPixels * 0.07) {
+            if (structuralEdges < 120) {
                 return {
                     likelyShoebox: false,
-                    reason: '畫面中央未能偵測到鞋盒或紙盒模型的結構與材質，請將「陳伯頂樓單位鞋盒模型」放於畫面中央拍攝。'
-                };
-            }
-
-            // Rule 4: Require orthogonal box edges (horizontal + vertical lines of a 3D rectangular shoebox)
-            if (orthogonalEdges < 28 || (diagonalOrganicEdges > orthogonalEdges * 2.2)) {
-                return {
-                    likelyShoebox: false,
-                    reason: '系統未能偵測到鞋盒的立體長方盒邊緣與窗口結構，請確保相片清楚拍到整個鞋盒模型。'
+                    reason: '畫面過於模糊或只拍到空白表面，請將鞋盒放於畫面中央拍攝。'
                 };
             }
 
@@ -1767,25 +1807,27 @@
             checkOverlay.classList.add('flex');
 
             try {
-                // Step 1: Run fast local computer-vision pre-check first to immediately catch obvious cartoons/clipart/screenshots
                 const heuristicPreCheck = analyzeImageHeuristics(img, fileName);
+                if (!heuristicPreCheck.likelyShoebox) {
+                    return {
+                        valid: false,
+                        title: '請拍攝「鞋盒 / 紙盒模型」！',
+                        desc: heuristicPreCheck.reason
+                    };
+                }
 
-                // Step 2: Call Gemini 3 Flash Vision API with strict shoebox verification criteria
-                const verifyPrompt = `你是一位嚴格的香港小學 STEAM 課堂 AI 助教，負責檢查學生上載的相片是否真的是「陳伯頂樓單位的實體鞋盒 / 紙盒建築改造模型」。
-請仔細觀察圖片，並嚴格遵守以下判斷標準：
-1. 只有當相片是【真實拍攝的立體鞋盒、瓦通紙盒、卡紙盒手作房間/建築模型】（例如有剪開窗口、貼上雪糕棍百葉窗、錫紙、吸管或小風扇等手作材料）時，isShoeboxModel 才可以設為 true。
-2. 如果圖片是以下任何一種，isShoeboxModel 必須設為 false：
-   - 卡通圖案、插畫、Icon、平面設計圖、網頁截圖、文字圖片
-   - 人像自拍、手部特寫、寵物、動物、植物、風景、天空、建築物外牆實景
-   - 食物、飲品、文具、書本、iPad/電腦螢幕、課室桌椅（沒有紙盒模型）
-   - 雖然是真實相片，但入面完全沒有「鞋盒 / 紙盒手作模型」
+                // Relaxed Gemini Vision check: Accept ANY shoebox, cardboard box, paper box, or craft box model (whether it has dolls/furniture/cutouts or is an empty shoebox!)
+                const verifyPrompt = `你是一位友善的香港小學 STEAM 課堂 AI 助手。請檢查學生上載或拍攝的相片中是否包含「鞋盒、紙盒、瓦通紙箱、卡紙盒或手作模型」。
+
+【極重要寬鬆原則】：
+- 只要畫面中有任何鞋盒、紙盒、紙箱或盒狀手作模型，不論盒內【有沒有公仔】、【有沒有傢俬】、【有沒有裝飾】、甚至只是【空的鞋盒或初步剪裁的紙盒】，都一律視為通過（isShoeboxModel = true）！
+- 只有當相片完全沒有任何鞋盒/紙盒（例如：純粹拍人像自拍、風景、動植物、食物、純書本文字、或者完全沒有紙盒的空桌面/地面），才設為 false。
 
 請只回傳有效 JSON 格式：
 {
   "isShoeboxModel": boolean,
-  "confidence": number,
-  "detectedObject": "用繁體中文簡短指出圖片實際拍到了甚麼（例如：卡通圖案 / 風景相片 / 食物 / 真實鞋盒模型）",
-  "feedbackMessage": "用繁體中文（香港課堂親切語氣）向學生說明原因，並提示學生重新拍攝『陳伯頂樓單位』的鞋盒模型"
+  "detectedObject": "用繁體中文簡短描述拍到的物品（例如：鞋盒模型 / 空紙盒 / 課室桌面無紙盒 / 人像）",
+  "feedbackMessage": "用繁體中文簡短回應學生"
 }`;
 
                 const aiRes = await fetchWithBackoff(
@@ -1807,7 +1849,6 @@
                                     type: "OBJECT",
                                     properties: {
                                         isShoeboxModel: { type: "BOOLEAN" },
-                                        confidence: { type: "NUMBER" },
                                         detectedObject: { type: "STRING" },
                                         feedbackMessage: { type: "STRING" }
                                     },
@@ -1822,58 +1863,29 @@
                 const rawText = aiRes?.candidates?.[0]?.content?.parts?.[0]?.text;
                 if (rawText) {
                     const parsed = JSON.parse(rawText);
-                    const isConfidentShoebox = parsed.isShoeboxModel === true && (parsed.confidence === undefined || parsed.confidence >= 0.65);
-
-                    // Require BOTH AI approval AND basic physical image structure (not a flat cartoon/clipart)
-                    if (!isConfidentShoebox) {
+                    if (parsed.isShoeboxModel === false) {
                         return {
                             valid: false,
-                            title: `偵測到「${parsed.detectedObject || '非鞋盒圖案'}」— 請上載鞋盒模型相片！`,
-                            desc: parsed.feedbackMessage || '這張圖片不是「陳伯頂樓單位」的鞋盒改造模型，請對準你們組別製作的鞋盒模型重新拍攝！'
+                            title: `偵測到「${parsed.detectedObject || '非鞋盒內容'}」— 未見鞋盒模型`,
+                            desc: parsed.feedbackMessage || '請對準你們的鞋盒或紙盒拍攝（盒內有冇公仔或傢俬都可以出效果圖）！'
                         };
                     }
-
-                    if (!heuristicPreCheck.likelyShoebox) {
-                        return {
-                            valid: false,
-                            title: '這似乎是平面圖案而非實體鞋盒相片！',
-                            desc: heuristicPreCheck.reason
-                        };
-                    }
-
                     return {
                         valid: true,
-                        title: `AI 已確認：成功辨識「${parsed.detectedObject || '陳伯頂樓單位鞋盒模型'}」！`,
-                        desc: parsed.feedbackMessage || '相片清楚顯示實體鞋盒結構，現在可以選擇方案並一鍵生成真實建築效果圖。'
-                    };
-                }
-
-                // Step 3: Strict fallback if API call fails or is offline
-                if (!heuristicPreCheck.likelyShoebox) {
-                    return {
-                        valid: false,
-                        title: '未能辨識出實體「鞋盒模型」！',
-                        desc: `${heuristicPreCheck.reason} 請同學上載或拍攝與「陳伯頂樓單位」相關的實體鞋盒作品。`
+                        title: `成功辨識鞋盒模型！`,
+                        desc: '有冇公仔傢俬都唔影響，系統已準備好為你的鞋盒生成真實建築效果圖！'
                     };
                 }
 
                 return {
                     valid: true,
-                    title: '已載入鞋盒模型相片！',
-                    desc: '相片已通過盒體結構與材質檢查，請在下方選擇「方案 A 或 方案 B」並按一鍵生成效果圖。'
+                    title: '已載入鞋盒相片！',
+                    desc: '有冇公仔傢俬都唔影響，系統已自動合成真實家居與降溫建築效果圖。'
                 };
             } catch (e) {
-                const heuristic = analyzeImageHeuristics(img, fileName);
-                if (!heuristic.likelyShoebox) {
-                    return {
-                        valid: false,
-                        title: '請上載相關的「鞋盒模型」相片！',
-                        desc: heuristic.reason
-                    };
-                }
                 return {
                     valid: true,
-                    title: '已載入鞋盒模型相片！',
+                    title: '已載入鞋盒相片！',
                     desc: '現在可點擊下方「一鍵生成效果圖」按鈕。'
                 };
             } finally {
@@ -2018,8 +2030,8 @@
             recalculateCoolingEffect();
             progressBar.style.width = '30%';
             const planLabel = appState.selectedPlan === 1
-                ? '方案 A：高處智能天窗 ＋ 背光低處百葉入風窗'
-                : '方案 B：屋頂最高處智能抽氣扇 ＋ 低處角落循環風扇向上吹 ＋ 溫度感應器';
+                ? '方案A：不同大小的窗口'
+                : '方案B：不同位置的風扇';
             statusTitle.textContent = `步驟 1/2：AI 正在辨識鞋盒的【${planLabel}】...`;
             statusSub.textContent = '正在將鞋盒模型轉化為陳伯頂樓單位的真實建築降溫效果圖';
 
@@ -2080,16 +2092,23 @@ Return ONLY valid JSON: {"boxX": number, "boxY": number, "boxW": number, "boxH":
                 statusTitle.textContent = '步驟 2/2：正在根據你的鞋盒照片角度與開口生成建築效果圖...';
 
                 const imgPrompt = appState.selectedPlan === 1
-                    ? `Strictly preserve the exact camera angle, box proportions, perspective, and window cutout positions of this input shoebox photo (Image-to-Image architectural rendering). Turn the cardboard walls into a realistic refurbished Hong Kong top-floor apartment with:
-                    1. High-level smart skylight window (高處智能天窗) at the top opening of the box for rising hot air to escape.
-                    2. Low-level louver intake window (低處百葉入風窗) at the lower wall opening to draw in cool shaded air. Keep exact composition of the input photo.`
-                    : `Strictly preserve the exact camera angle, box proportions, perspective, and layout of this input shoebox photo (Image-to-Image architectural rendering). Turn the cardboard walls into a realistic refurbished Hong Kong top-floor apartment with:
-                    1. Smart exhaust fan (屋頂最高處智能抽氣扇) at the top of the box.
-                    2. Circulator fan at the lower corner blowing upward (低處角落循環風扇向上吹).
-                    3. Smart temperature sensors (溫度感應器) on the interior wall. Keep exact composition of the input photo.`;
+                    ? `Photorealistic architectural image-to-image transformation of this handmade shoebox model photo.
+CRITICAL RULES:
+1. Strictly preserve the exact camera angle, 3D box geometry, perspective, wall cutouts, and interior layout of the uploaded shoebox photo.
+2. Transform the cardboard shoebox into a realistic, bright refurbished Hong Kong top-floor apartment interior/cutaway with white insulated walls, warm wooden floor, and cozy living room furniture.
+3. At the high roof/upper wall opening of the shoebox, integrate a realistic 3D open skylight window (high-level exhaust window) with subtle warm upward airflow visualization.
+4. At the lower wall opening of the shoebox, integrate a realistic 3D shaded louver window with cool fresh air flowing inward.
+5. DO NOT include any text, words, letters, numbers, or labels anywhere in the image. Pure architectural visual rendering only.`
+                    : `Photorealistic architectural image-to-image transformation of this handmade shoebox model photo.
+CRITICAL RULES:
+1. Strictly preserve the exact camera angle, 3D box geometry, perspective, wall cutouts, and interior layout of the uploaded shoebox photo.
+2. Transform the cardboard shoebox into a realistic, bright refurbished Hong Kong top-floor apartment interior/cutaway with white insulated walls, warm wooden floor, and cozy living room furniture.
+3. At the highest point of the roof on the shoebox, integrate a realistic built-in smart exhaust fan pulling warm air outward.
+4. At the lower corner of the shoebox interior, integrate a modern upward-tilted air circulator fan pushing cool airflow diagonally upward.
+5. DO NOT include any text, words, letters, numbers, or labels anywhere in the image. Pure architectural visual rendering only.`;
 
                 const imageTaskPromise = fetchWithBackoff(
-                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`,
+                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent?key=${apiKey}`,
                     {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -2120,14 +2139,14 @@ Return ONLY valid JSON: {"boxX": number, "boxY": number, "boxW": number, "boxH":
                             const ctx = afterCanvas.getContext('2d');
                             ctx.clearRect(0, 0, afterCanvas.width, afterCanvas.height);
                             ctx.drawImage(genImg, 0, 0, afterCanvas.width, afterCanvas.height);
-                            document.getElementById('renderEngineBadge').innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> AI 已按你拍攝的鞋盒角度 1:1 生成建築效果圖`;
+                            document.getElementById('renderEngineBadge').innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> AI 已按你拍攝的鞋盒照片 1:1 生成高擬真建築效果圖`;
                             resolve();
                         };
                         genImg.onerror = () => resolve();
                         genImg.src = `data:${imgPart.inlineData.mimeType || 'image/png'};base64,${imgPart.inlineData.data}`;
                     });
                 } else {
-                    document.getElementById('renderEngineBadge').innerHTML = `<i class="fa-solid fa-camera-rotate"></i> 已根據你的鞋盒照片結構 1:1 轉換（${appState.selectedPlan === 1 ? '方案 A：不同大小的窗戶' : '方案 B：不同位置的風扇'}）`;
+                    document.getElementById('renderEngineBadge').innerHTML = `<i class="fa-solid fa-camera-rotate"></i> 已根據你的鞋盒照片結構 1:1 轉換為真實建築效果圖`;
                 }
 
                 recalculateCoolingEffect();
